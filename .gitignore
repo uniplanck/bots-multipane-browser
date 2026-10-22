@@ -1,0 +1,13 @@
+node_modules/
+dist/
+backup-*/
+*.bak*
+*.log
+.DS_Store
+builder-debug.yml
+.env
+.env.*
+panes.json
+*.state.json
+favorites.backup-*.json
+screenshots/
