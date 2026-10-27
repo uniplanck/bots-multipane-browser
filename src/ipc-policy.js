@@ -8,7 +8,7 @@
 //        approve = the 承認Bot popup (no preload: may not send anything)
 const path = require('path');
 const { fileURLToPath } = require('url');
-const { SNAP } = require('./pane-rules');
+const { SNAP, DRAFT } = require('./pane-rules');
 
 const ROLES = ['chrome', 'overlay', 'pane', 'probe', 'approve'];
 const MAX_PANES = 10;                     // = MAX in main.js
@@ -138,8 +138,10 @@ const CHANNELS = {
   'fav-menu': { roles: CHROME, shape: a => id(a[0]), target: (a, w) => w.fav(a[0]) },
   'fav-move': { roles: CHROME, shape: a => id(a[0]) && id(a[1]), target: (a, w) => w.fav(a[0]) && w.fav(a[1]) },
   'fav-add': { roles: CHROME, shape: a => str(a[0], URL_MAX) && text(a[1]) },
-  // Grok bar (grok-bots.js): read the list again (main runs one read at a time), open / menu of a listed Bot, a pin dragged onto another pin
+  // Grok bar (grok-bots.js): read the list again (main runs one read at a time), the next 表示モード (gbar-mode.js: main cycles its own setting,
+  // nothing comes from the page), open / menu of a listed Bot, a pin dragged onto another pin
   'gbar-refresh': { roles: CHROME },
+  'gbar-mode': { roles: CHROME },
   'gbot-open': { roles: CHROME, shape: a => gid(a[0]) && where(a[1]), target: (a, w) => w.gbot(a[0]) },
   'gbot-menu': { roles: CHROME, shape: a => gid(a[0]), target: (a, w) => w.gbot(a[0]) },
   'gbot-move': { roles: CHROME, shape: a => gid(a[0]) && gid(a[1]), target: (a, w) => w.gbot(a[0]) && w.gbot(a[1]) },
@@ -171,6 +173,8 @@ const CHANNELS = {
   'pane:img-closed': { roles: PANE, shape: a => bool(a[0]) },
   'pane:interact': { roles: PANE }, 'pane:mouseup': { roles: PANE }, 'pane:typing': { roles: PANE },
   'pane:draft': { roles: PANE, shape: a => bool(a[0]) },
+  'pane:draft-load': { roles: PANE, origin: GROK, shape: ([d]) => obj(d) && id(d.gen) && int(d.rev, 0, Number.MAX_SAFE_INTEGER) && str(d.url, URL_MAX) && !!DRAFT.url(d.url) },
+  'pane:draft-save': { roles: PANE, origin: GROK, shape: ([d]) => obj(d) && id(d.gen) && int(d.rev, 0, Number.MAX_SAFE_INTEGER) && str(d.url, URL_MAX) && !!DRAFT.url(d.url) && str(d.text, DRAFT.MAX) },
   'pane:editing': { roles: PANE, shape: a => bool(a[0]) },
   'pane:ime': { roles: PANE, shape: a => bool(a[0]) },        // an IME composition started / ended (#11 input guard)
   'pane:sel': { roles: PANE, shape: a => bool(a[0]) },        // a selection in the page outside any field (選択部分だけコピー)

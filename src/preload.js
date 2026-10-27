@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('mpb', {
   ready: () => send('ready'),
   favOpen: (id, where) => send('fav-open', id, where), favMenu: id => send('fav-menu', id),
   favMove: (a, b) => send('fav-move', a, b), favAdd: (url, label) => send('fav-add', String(url), String(label || '')),
-  gbarRefresh: () => send('gbar-refresh'), gbotOpen: (id, where) => send('gbot-open', id, where), gbotMenu: id => send('gbot-menu', id),   // Grok bar
+  gbarRefresh: () => send('gbar-refresh'), gbarMode: () => send('gbar-mode'), gbotOpen: (id, where) => send('gbot-open', id, where), gbotMenu: id => send('gbot-menu', id),   // Grok bar
   gbotMove: (a, b) => send('gbot-move', a, b), onGbar: cb => listen('gbar', (_, v) => cb(v)),
   renamePane: id => send('rename-pane', id),
   chipMenu: id => send('chip-menu', id), wsMenu: () => send('ws-menu'),
@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('mpb', {
   probeResume: () => send('probe-resume'),
   approveOpen: () => send('approve-open'), focusOther: (wid, pid) => send('focus-other', wid, pid),
   saveRetry: () => send('save-retry'), recoveryOpen: () => send('recovery-open'),
-  onMem: cb => listen('mem', (_, b) => cb(b)), onOthers: cb => listen('others', (_, l) => cb(l)),
+  onMem: cb => listen('mem', (_, data) => cb(data)), onOthers: cb => listen('others', (_, l) => cb(l)),
   onWsSaved: cb => listen('ws-saved', (_, n) => cb(n)), onApproveRect: cb => listen('approve-rect', (_, r) => cb(r)),
   usagePopShow: r => send('usage-pop-show', r), usagePopKeep: () => send('usage-pop-keep'), usagePopLeave: () => send('usage-pop-leave'), usagePopSize: h => send('usage-pop-size', h),
   usageMargin: v => ipcRenderer.invoke('usage:margin', v),

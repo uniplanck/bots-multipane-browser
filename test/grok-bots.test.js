@@ -116,7 +116,7 @@ t('movePin: dropped onto another pin takes its place (as the favorites); not pin
   t('merge: new ones added, gone ones removed (and unpinned), names / sections updated, order = the new page order', m.added === 1 && m.removed === 3 && m.changed === 1
     && J(m.grok.bots.map(b => [b.id, b.name, b.section, b.order])) === J([[U(2), 'Helper', '稼働', 0], [U(1), 'Team Alpha 2', '稼働', 1], ['new-bot', '新入り', 'Dev', 2]]) && J(m.grok.pins) === J([U(2)]));
   t('merge: the user\'s names stay (also of a Bot gone for now: back with it)', m.grok.aliases[U(2)] === 'ティボ' && GB.valid(m.grok)); }
-{ const favs = [{ id: 1, url: 'https://example.com/', label: 'ex' }, { id: 2, url: `https://grok.com/bot/${U(6)}`, label: 'TeamX' }, { id: 3, url: 'https://grok.com/bot/unknown-bot', label: 'u' }];
+{ const favs = [{ id: 1, url: 'https://example.com/', label: 'ex' }, { id: 2, url: `https://grok.com/bot/${U(6)}`, label: 'NaoOS' }, { id: 3, url: 'https://grok.com/bot/unknown-bot', label: 'u' }];
   const a = GB.absorbFavs(g0, favs);
   t('absorbFavs: a favorite that is a listed Bot becomes its pin; the others stay as they were (same objects)', a.moved === 1 && J(a.grok.pins) === J([U(6)]) && a.keep.length === 2 && a.keep[0] === favs[0] && a.keep[1] === favs[2]);
   t('addUrl (お気に入りに追加): a listed Bot -> pinned; another URL / an unknown Bot -> an ordinary favorite', (r => r.pinned && J(r.grok.pins) === J([U(3)]))(GB.addUrl(g0, `https://grok.com/bot/${U(3)}?x=1`))
@@ -290,7 +290,7 @@ const dialog = (media = true) => ({ querySelector: () => (media ? {} : null) });
 { const main = read('main.js');
   const fn = name => { const i = main.indexOf(`function ${name}(`); if (i < 0) return ''; let d = 0, j = main.indexOf('{', main.indexOf(')', i)); for (; j < main.length; j++) { if (main[j] === '{') d++; else if (main[j] === '}' && --d === 0) break; } return main.slice(i, j + 1); };
   t('main: img-opened maximizes only with settings.autoImg on (default on), awake, on grok.com, not during the cloud PC', /settings\.autoImg === false/.test(main) && /paneOn\('pane:img-opened', p => \{[^\n]*\n\s*if \(p\.imgMax \|\| p\.pcMax \|\| p\.sleeping \|\| settings\.autoImg === false \|\| !\/\^https:\\\/\\\/grok\\\.com\\\/\/\.test/.test(main));
-  t('main: setImgMax gives back only what it maximized itself, and only when the viewer closed', /if \(on\) \{ if \(maximizedId !== p\.id\) \{ toggleMaximize\(p\.id\); p\.imgMaxedPane = true; \} else p\.imgMaxedPane = false; \}/.test(fn('setImgMax')) && /if \(back && mine && maximizedId === p\.id\) toggleMaximize\(p\.id\);/.test(fn('setImgMax'))
+  t('main: setImgMax gives back only what it maximized itself, and only when the viewer closed, without taking focus', /if \(on\) \{ if \(maximizedId !== p\.id\) \{ toggleMaximize\(p\.id\); p\.imgMaxedPane = true; \} else p\.imgMaxedPane = false; \}/.test(fn('setImgMax')) && /if \(back && mine && maximizedId === p\.id\) toggleMaximize\(p\.id, false\);/.test(fn('setImgMax'))
     && /paneOn\('pane:img-closed', \(p, viewer\) => \{ if \(p\.imgMax\) setImgMax\(p, false, viewer === true\); \}\);/.test(main) && !/mpb:pc/.test(fn('setImgMax')));
   t('main: Esc goes to the image viewer first (as the cloud PC); a new page drops the image state', /if \(pane\?\.imgMax\) return false;/.test(fn('handleKey')) && /if \(p\.imgMax\) setImgMax\(p, false\); \}\);/.test(main));
   t('main: 設定 has the image setting (checked unless turned off)', /checked: settings\.autoImg !== false, click: m => \{ settings\.autoImg = m\.checked; save\(\); \}/.test(fn('buildMenu')));

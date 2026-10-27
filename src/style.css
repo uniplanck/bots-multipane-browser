@@ -120,13 +120,24 @@ body.docking .pane .dockshot[src]{display:block}
 #gbar-next:hover{color:var(--text)}
 #fav-hint{color:var(--dim);font-size:11px;position:absolute;left:46px;pointer-events:none}
 #gbar-note:not(:empty)~#fav-hint{display:none!important}
-.fav-btn.gbot{max-width:136px;padding:0 7px 0 4px}
+.fav-btn.gbot{max-width:136px;padding:0 7px 0 4px;border-color:transparent}
 .gic{width:16px;height:16px;border-radius:50%;flex:none;object-fit:cover}
 .gbot .fic{width:16px;height:16px;border-radius:50%}
-.fav-btn.gpin{border-color:color-mix(in srgb,var(--glow) 45%,var(--line))}
-.gmark{flex:none;font-size:9px;opacity:.75}
+/* Group frame stays inside the rounded button in every mode; no extra width for paging. Bots keep the same invisible border geometry. */
+.fav-btn.gbot.grp{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dim) 75%,transparent)}
+/* Open/active frames use the existing border space in every mode, so pages never shift.
+   Active: the border + a second inner pixel and a small glow. Groups keep a separate inset frame. */
+#favs .fav-btn.gopen{border-color:var(--accent)}
+#favs .fav-btn.gactive{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent),0 0 4px color-mix(in srgb,var(--accent) 65%,transparent)}
+#favs .fav-btn.gactive.grp{box-shadow:inset 0 0 0 1px var(--accent),inset 0 0 0 2px color-mix(in srgb,var(--dim) 75%,transparent),0 0 4px color-mix(in srgb,var(--accent) 65%,transparent)}
 .gsec{flex:none;padding:0 2px 0 6px;color:var(--dim);font-size:10px;font-weight:600;white-space:nowrap}
 .gsep{flex:none;width:1px;height:16px;margin:0 4px;background:var(--line2)}
+/* 表示モード (right-click on the Grok button; gbar-mode.js): セミコンパクト = icon + a name of 4 units, smaller headings; コンパクト = the icon only
+   (none: its first letter), headings of 2 units; 次へ › stays as it is. Every mode is measured again for the pages (the class is set before) */
+#favs.gm-semi .fav-btn:not(#gbar-next){padding:0 6px}
+#favs.gm-semi .fav-btn.gbot{padding:0 6px 0 3px;gap:4px}
+#favs.gm-compact .fav-btn:not(#gbar-next){padding:0 3px;gap:0}
+#favs.gm-semi .gsec,#favs.gm-compact .gsec{font-size:9px;padding:0 1px 0 4px}
 .fav-btn{display:flex;align-items:center;gap:5px;width:auto;max-width:96px;overflow:hidden;white-space:nowrap;flex:none;height:22px;border:1px solid var(--line);background:var(--ctl);border-radius:6px;padding:0 8px;color:var(--text);transition:background .12s,transform .12s}
 .fav-btn:hover{background:var(--ctl-hi)}
 .fav-btn:active{transform:scale(.97)}
@@ -218,8 +229,10 @@ body.split-c{cursor:col-resize} body.split-r{cursor:row-resize}
 
 .meta .zind{color:#ffb800;font-weight:600}
 
-/* memory meter (top-left, fixed width so it never shifts with the digits) */
-#mem{flex:none;width:50px;text-align:right;font:11px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;color:var(--dim);letter-spacing:0;white-space:nowrap;overflow:hidden;cursor:default}
+/* memory / CPU meters (top-left, room for tabular digits without shifting the bar) */
+#mem,#cpu{flex:none;text-align:right;font:11px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;color:var(--dim);letter-spacing:0;white-space:nowrap;cursor:default}
+#mem{width:50px;overflow:hidden}
+#cpu{width:10ch}
 /* notification chips of other windows */
 #others-sep,#others{display:none;flex:none}
 #others-sep.show{display:block;width:1px;height:20px;background:var(--line2);margin:0 4px 0 6px}

@@ -28,10 +28,14 @@ $('#queue-sum').onclick = () => mpb.run({ type: 'queue-open' });   // (#01) 対�
 $('#approve-btn').onclick = () => mpb.approveOpen();
 // panes.json warning (state-store.js): unreadable at start -> recovery list; a save failed -> retry. The panes stay as they are.
 $('#save-warn').onclick = () => { const st = (S && S.store) || {}; if (st.status && st.status !== 'ready') mpb.recoveryOpen(); else mpb.saveRetry(); };
-// memory meter: fixed-width, tabular digits; <1GB -> "333MB", else "1.2GB"
-const memEl = $('#mem');
+// Memory / CPU meters: tabular digits; <1GB -> "333MB", else "1.2GB". IPC carries numbers only.
+const memEl = $('#mem'), cpuEl = $('#cpu');
 const fmtMem = b => { const mb = b / 1048576; return Math.round(mb) < 1024 ? `${Math.round(mb)}MB` : `${(mb / 1024).toFixed(1)}GB`; };
-mpb.onMem(b => { const t = fmtMem(b); if (memEl.textContent !== t) memEl.textContent = t; });
+mpb.onMem(data => {
+  const mem = fmtMem(data.bytes), cpu = CpuMeter.formatCpu(data.appCpu, data.macCpu);
+  if (memEl.textContent !== mem) memEl.textContent = mem;
+  if (cpuEl.textContent !== cpu) cpuEl.textContent = cpu;
+});
 // notification chips for panes in other windows (hidden when there is only one window)
 const othersEl = $('#others'), othersSep = $('#others-sep');
 mpb.onOthers(list => {
@@ -79,17 +83,18 @@ function mk(id) {
     </div>
   </div>
   <div class="sleepph"><div class="sleepid"><div class="sn"></div><div class="sg"></div></div><div class="sleepr"></div><span class="sp1">💤 スリープ中 — クリックで復帰</span><span class="sp2">✉ 未開封の新着メッセージがあります — クリックで開く</span><span class="sp3">⏳ 読み込み待ち<b class="lpn"></b><button class="lqx" title="このペインの読み込み待ちを取り消す（スリープのまま）">取消</button></span><blockquote class="sleepq"></blockquote><div class="chk"><span class="chkt"></span><button class="pbx pbl" title="このペインを開いてログイン状態を確認します">ログインを確認</button><button class="pbx pbr" title="スリープ中の新着確認を再開します（1枚ずつ順番に確認）">確認を再開</button></div><small>終了（1分後）・待機中（30分後）に休止（メモリ節約）。入力途中の文字やリアルタイム更新は復帰まで失われます</small></div>
-  <div class="loadph"><span class="lp1">⏳ 読み込み待ち<b class="lpn"></b></span><span class="lp2">読み込みを取り消しました — クリックで読み込む</span><button class="lqx" title="このペインの読み込み待ちを取り消す">取消</button><small>同時に読み込むのは2枚まで。順番が来ると自動で読み込みます</small></div>
+  <div class="loadph"><span class="lp1">⏳ 読み込み待ち<b class="lpn"></b></span><span class="lp2">読み込みを取り消しました — クリックで読み込む</span><button class="lqx" title="このペインの読み込み待ちを取り消す">取消</button><small>同時に読み込むのは通常4枚まで。順番が来ると自動で読み込みます</small></div>
   <div class="goneph"><span class="gp1">⚠ ページが停止しました</span><button class="pbx gpr" title="このペインのページを読み込み直します">再読み込み</button><span class="gp2">⏳ 読み込み待ち<b class="lpn"></b><button class="lqx" title="この読み込み待ちを取り消す">取消</button></span><span class="gp3">再読み込み中…</span><small>このペインのページの処理が止まりました（ほかのペインはそのままです）。自動では再読み込みしません。入力途中の文字・添付は戻らないことがあります</small></div>
   <img class="dockshot" alt="" draggable="false">`;
-  d.querySelector('.sleepph').onclick = () => mpb.wakePane(id);
+  const openSleeping = () => { mpb.focusPane(id); mpb.wakePane(id); };   // only this explicit pane click selects; wake-pane itself preserves focus
+  d.querySelector('.sleepph').onclick = openSleeping;
   // (#32) the page's renderer is gone: 再読み込み is the pane's usual reload (the input guard and the load queue as ↻)
   d.querySelector('.gpr').onclick = e => { e.stopPropagation(); mpb.reload(id); };
-  d.querySelector('.loadph').onclick = () => { if (d.classList.contains('idle')) mpb.wakePane(id); };
+  d.querySelector('.loadph').onclick = () => { if (d.classList.contains('idle')) openSleeping(); };
   // 取消 of a pane waiting for a load slot (placeholder / sleeping placeholder / header): only the wait ends, the click goes nowhere else
   d.addEventListener('click', e => { if (e.target.closest('.lqx')) { e.stopPropagation(); mpb.loadCancel(id); } }, true);
   // (#33) stopped after a sign-in page: ログインを確認 opens this pane (the page shows the sign-in), 確認を再開 only resumes the checks
-  d.querySelector('.pbl').onclick = e => { e.stopPropagation(); mpb.wakePane(id); };
+  d.querySelector('.pbl').onclick = e => { e.stopPropagation(); openSleeping(); };
   d.querySelector('.pbr').onclick = e => { e.stopPropagation(); mpb.probeResume(); };
   d.querySelectorAll('.tools button').forEach(b => b.onclick = e => { e.stopPropagation(); mpb[b.dataset.a](id); });
   const head = d.querySelector('.head'), inp = d.querySelector('.url'), title = d.querySelector('.title');
@@ -278,20 +283,47 @@ const onS = s => {
 };
 mpb.onState(onS);
 // ---- お気に入りバー: [Grok button][pins][favorites = other URLs][the Bot list in grok.com's sections]. main reads the list (Grok button only) and
-// sends it on 'gbar' (G: pins / sections / busy / note); the bar is rebuilt only when that or the favorites change
+// sends it on 'gbar' (G: pins / sections / busy / note / mode); the bar is rebuilt only when that or the favorites change.
+// 表示モード (gbar-mode.js; main keeps it): a right-click on the Grok button takes the next one, 通常 → セミコンパクト → コンパクト → 通常
 const favs = $('#favs'), gbtn = $('#fav-star'), gnote = $('#gbar-note');
-let G = null, gRev = 0, favKey = '';
-const openWhere = e => e.shiftKey ? 'window' : (e.metaKey || e.ctrlKey) ? 'new' : 'here';
-gbtn.onclick = () => { if (!(G && G.busy)) mpb.gbarRefresh(); };
+let G = null, gRev = 0, favKey = '', gMode = 'normal';
+let gItems = [];                                            // includes pins and detached pages; state changes never rebuild the bar
+function gTrack(el, item) { gItems.push({ el, id: GbarPresence.botId(item.url), title: el.title }); }
+function gPresence() {
+  const { openIds, focusedId } = GbarPresence.match(S ? S.panes || [] : [], S && S.focusedId);
+  gItems.forEach(({ el, id, title }) => {
+    const open = openIds.has(id), active = !!id && id === focusedId;
+    el.classList.toggle('gopen', open); el.classList.toggle('gactive', active);
+    el.title = title + (active ? '\n今のペインで開いています' : open ? '\nペインで開いています' : '');
+    el.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+}
+const openWhere = e => e.shiftKey ? 'window' : (e.metaKey || e.altKey) ? 'here' : 'new';
+// a name as the mode shows it: 通常 = as before (up to max columns), セミコンパクト = 4 units (コンパクト: no name, see gbotBtn / renderFavs)
+const gLabel = (s, max) => (gMode === 'semi' ? GbarMode.truncate(s) : shortLabel(s, max));
+// Handle secondary mousedown too in case native contextmenu is missed; consume its contextmenu / click once.
+// A new press (or keyboard interaction) resets the gesture: rapid distinct right-clicks still each advance the mode.
+let gModePress = false, gModeClick = false;
+gbtn.onmousedown = e => {
+  gModePress = gModeClick = e.button === 2 || (e.button === 0 && e.ctrlKey);
+  if (gModePress) { e.preventDefault(); mpb.gbarMode(); }
+};
+gbtn.oncontextmenu = e => { e.preventDefault(); if (!gModePress) mpb.gbarMode(); gModePress = false; gModeClick = true; };
+gbtn.onkeydown = () => { gModePress = gModeClick = false; };
+gbtn.onclick = (e = {}) => {
+  if (gModeClick || e.button === 2 || e.ctrlKey) { e.preventDefault?.(); gModeClick = false; return; }
+  if (!(G && G.busy)) mpb.gbarRefresh();
+};
 mpb.onGbar(v => {
-  G = v; gRev++;
+  G = v; gRev++; gMode = GbarMode.normMode(v.mode);
   gbtn.classList.toggle('busy', !!v.busy); gbtn.setAttribute('aria-busy', v.busy ? 'true' : 'false');
-  gbtn.title = v.busy ? 'Bot一覧を読み込み中…（grok.com を裏で開いています）' : `Grok：クリックでBot一覧を読み込み直す（grok.com のサイドバーの全Bot・グループ。増えた・消えた・名前・アイコンを反映）${v.at ? `\n前回: ${new Date(v.at).toLocaleString('ja-JP', { hour12: false })}・${v.count}件` : ''}`;
+  gbtn.title = (v.busy ? 'Bot一覧を読み込み中…（grok.com を裏で開いています）' : `Grok：クリックでBot一覧を読み込み直す（grok.com のサイドバーの全Bot・グループ。増えた・消えた・名前・アイコンを反映）${v.at ? `\n前回: ${new Date(v.at).toLocaleString('ja-JP', { hour12: false })}・${v.count}件` : ''}`)
+    + `\n右クリック: 表示を切替（${GbarMode.LABEL[gMode]} → ${GbarMode.LABEL[GbarMode.nextMode(gMode)]}）`;
   gnote.textContent = v.busy ? '読み込み中…' : v.note || '';
   renderFavs(S ? S.favorites || [] : []);
 });
 function gIcon(b) {                                          // its icon (16 px round), or the first letter when there is none / it does not load
-  const l = document.createElement('span'); l.className = 'fic'; l.textContent = (Array.from(String(b.name).trim())[0] || '•').toUpperCase();
+  const l = document.createElement('span'); l.className = 'fic'; l.textContent = GbarMode.initial(b.name);   // a whole character (emoji, marks)
   if (!b.icon) return l;
   const im = document.createElement('img'); im.className = 'gic'; im.alt = ''; im.draggable = false; im.referrerPolicy = 'no-referrer';
   im.addEventListener('error', () => im.replaceWith(l), { once: true }); im.src = b.icon;
@@ -301,9 +333,33 @@ function gbotBtn(b, pin) {
   const el = document.createElement('button');
   el.className = 'fav-btn gbot' + (pin ? ' gpin' : '') + (b.group ? ' grp' : '');
   el.appendChild(gIcon(b));
-  el.insertAdjacentHTML('beforeend', `<span class="flabel">${esc(shortLabel(b.name, 10))}</span>${b.group ? '<span class="gmark">👥</span>' : ''}`);
-  el.title = `${b.name}${b.name !== b.orig ? `（元の名前: ${b.orig}）` : ''}${b.group ? '・グループ' : ''}${b.pinned ? '・お気に入り' : ''}\n${b.url}\nクリック: 選択中のペインで開く\n${MOD}クリック: 新しいペイン ／ ⇧クリック: 別ウィンドウ\n右クリック: メニュー（名前変更・お気に入り）${pin ? ' ／ ドラッグで並べ替え' : ''}`;
-  el.onclick = e => mpb.gbotOpen(b.id, openWhere(e));
+  if (gMode !== 'compact') el.insertAdjacentHTML('beforeend', `<span class="flabel">${esc(gLabel(b.name, 10))}</span>`);   // コンパクト: the icon only
+  el.title = `${b.name}${b.name !== b.orig ? `（元の名前: ${b.orig}）` : ''}${b.group ? '・グループ' : ''}${b.pinned ? '・お気に入り' : ''}\n${b.url}\nクリック: 新しいペインで開く（上限時は今のペイン）\n長押しで今のペインで開く（約0.5秒押して離す）\n${MOD}・Optionクリック: 今のペイン ／ ⇧クリック: 別ウィンドウ\n右クリック: メニュー（今のペイン・名前変更・お気に入り）${pin ? ' ／ ドラッグで並べ替え' : ''}`;
+  gTrack(el, b);
+  let hold = GbarLongPress.idle(), feedback = null;
+  const clearFeedback = () => { if (feedback) feedback.cancel(); feedback = null; };
+  const cancelHold = e => { hold = GbarLongPress.cancel(hold, e); if (!hold.press) clearFeedback(); };
+  el.onpointerdown = e => {
+    clearFeedback(); hold = GbarLongPress.begin(e);
+    if (hold.press) feedback = el.animate([{ backgroundColor: 'var(--ctl-hi)' }, { backgroundColor: 'var(--accent)' }], { duration: GbarLongPress.HOLD_MS, easing: 'linear', fill: 'forwards' });
+  };
+  el.onpointermove = e => { hold = GbarLongPress.move(hold, e); if (!hold.press) clearFeedback(); };
+  el.onpointerleave = el.onpointercancel = cancelHold;
+  // Do not capture the pointer or prevent pointerdown/dragstart: pinned items
+  // retain Chromium's native drag-and-drop reorder gesture.
+  el.addEventListener('dragstart', () => cancelHold());
+  el.onpointerup = e => {
+    const result = GbarLongPress.release(hold, e); hold = result.state;
+    if (!hold.press) clearFeedback();
+    if (result.openHere) mpb.gbotOpen(b.id, 'here');
+  };
+  el.onclick = e => {
+    const result = GbarLongPress.click(hold, e); hold = result.state;
+    clearFeedback();
+    if (result.suppress) { e.preventDefault(); e.stopPropagation(); return; }
+    if (e.button === 2 || e.ctrlKey) return;
+    mpb.gbotOpen(b.id, openWhere(e));
+  };
   el.onauxclick = e => { if (e.button === 1) mpb.gbotOpen(b.id, 'new'); };
   el.oncontextmenu = e => { e.preventDefault(); mpb.gbotMenu(b.id); };
   if (pin) {                                                 // pins: drag one onto another to reorder (as the favorites)
@@ -363,20 +419,23 @@ function gShow() {                                           // the page after t
 new ResizeObserver(() => gLayout()).observe(favs);
 function renderFavs(list) {
   const key = JSON.stringify(list) + '|' + gRev;
-  if (key === favKey) return;
+  if (key === favKey) { gPresence(); return; }                // onState: navigation / open / close / focus, without remeasuring or changing page
   favKey = key;
   const pins = G ? G.pins : [], secs = G ? G.sections : [];
   $('#fav-hint').style.display = list.length || pins.length || secs.length ? 'none' : '';
+  favs.classList.toggle('gm-semi', gMode === 'semi'); favs.classList.toggle('gm-compact', gMode === 'compact');   // (表示モード) before anything is measured
   favs.innerHTML = '';
+  gItems = [];
   pins.forEach(b => favs.appendChild(gbotBtn(b, true)));
   const els = [], keys = [], sec = [];                       // the paged items: favorites (no section), then each section's Bots
   list.forEach(f => {
     const b = document.createElement('button');
     b.className = 'fav-btn'; b.draggable = true;
     let host = ''; try { host = new URL(f.url).hostname; } catch {}
-    const isBot = /grok\.com$/.test(host) && /\/bot\//.test(f.url);
-    b.innerHTML = `<span class="flabel">${esc(shortLabel(f.label || host))}</span>`;
+    const isBot = /grok\.com$/.test(host) && /\/bot\//.test(f.url), name = f.label || host;
+    b.innerHTML = gMode === 'compact' ? `<span class="fic">${esc(GbarMode.initial(name))}</span>` : `<span class="flabel">${esc(gLabel(name))}</span>`;   // no icon of its own: コンパクト shows its first letter
     b.title = `${f.label}\n${f.url}\nクリック: 選択中のペインで開く\n${MOD}クリック: 新しいペイン ／ ⇧クリック: 別ウィンドウ\n右クリック: メニュー（名前変更・削除）／ ドラッグで並べ替え`;
+    gTrack(b, f);
     b.onclick = e => mpb.favOpen(f.id, e.shiftKey ? 'window' : (e.metaKey || e.ctrlKey) ? 'new' : 'here');
     b.onauxclick = e => { if (e.button === 1) mpb.favOpen(f.id, 'new'); };
     b.oncontextmenu = e => { e.preventDefault(); mpb.favMenu(f.id); };
@@ -390,10 +449,11 @@ function renderFavs(list) {
   const heads = secs.map((s, k) => {                         // grok.com's own sections (the user's tabs), in the page's order
     s.items.forEach(b => { els.push(gbotBtn(b, false)); keys.push('b' + b.id); sec.push(k); });
     if (!s.name) return null;
-    const h = mkEl('gsec', shortLabel(s.name, 12)); h.title = s.name; return h;
+    const h = mkEl('gsec', gMode === 'compact' ? GbarMode.truncate(s.name, 2) : gLabel(s.name, 12)); h.title = s.name; return h;   // コンパクト: 2 units
   });
   GP = { pinN: pins.length, els, keys, sec, heads, sep: mkEl('gsep'), w: -1, ok: false, pages: [], page: 0 };
   gLayout();
+  gPresence();
 }
 // drop a link / URL text onto the favorites bar to add it
 const fb = $('#favbar');
@@ -506,7 +566,7 @@ window.addEventListener('blur', () => { document.body.classList.remove('splittin
       const c=on()?calc():null, u=btn.querySelector('.uval');
       btn.hidden=src==='off';
       btn.className='pill usage mode-'+mode+(src==='info'?' info':c?' lv-'+level(mode,c.pct):' err')+(c&&last&&last.stale?' stale':'')+(on()&&login()?' needlogin':'');
-      if(!c){u.textContent='--';return;}
+      if(!c){u.textContent=kind==='claude'&&last&&last.relogin&&last.needLogin?'Terminalで /login が必要':'--';return;}
       u.textContent=fmt(c.v);
     };
     const load=async force=>{
