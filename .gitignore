@@ -5,6 +5,8 @@ backup-*/
 *.log
 .DS_Store
 builder-debug.yml
+dist-update/
+src/build-info.json
 .env
 .env.*
 panes.json
