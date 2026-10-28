@@ -9,6 +9,7 @@
 const path = require('path');
 const { fileURLToPath } = require('url');
 const { SNAP, DRAFT } = require('./pane-rules');
+const AS = require('./approve-setting');
 
 const ROLES = ['chrome', 'overlay', 'pane', 'probe', 'approve'];
 const MAX_PANES = 10;                     // = MAX in main.js
@@ -90,6 +91,8 @@ const ACTIONS = {
   'diag-persist': { shape: x => bool(x.on) },
   'update-check': {}, 'update-start': {}, 'update-restart': {}, 'update-later': {},
   'update-choice': { shape: x => bool(x.on) }, 'update-toggle': { shape: x => bool(x.on) },
+  'approve-save': { shape: x => Object.keys(x).length === 3 && !!AS.normalizeUrl(x.url) && AS.validLabel(x.label) },
+  'approve-reset': { shape: x => Object.keys(x).length === 1 },
   rename: { shape: x => id(x.id) && text(x.value), target: inPane },
   'ws-save': { shape: x => newName(x.value) },
   'ws-overwrite': { shape: x => text(x.name) && opt(x.confirm, bool), target: inWs },
@@ -148,6 +151,12 @@ const CHANNELS = {
   'gbot-menu': { roles: CHROME, shape: a => gid(a[0]), target: (a, w) => w.gbot(a[0]) },
   'gbot-move': { roles: CHROME, shape: a => gid(a[0]) && gid(a[1]), target: (a, w) => w.gbot(a[0]) && w.gbot(a[1]) },
   'focus-other': { roles: CHROME, shape: a => id(a[0]) && id(a[1]), target: (a, w) => w.winPane(a[0], a[1]) },   // a chip of a pane in another window
+  // Chrome-only, bounded display data. The tooltip window itself has no IPC send API.
+  'tip-show': { roles: CHROME, shape: ([p]) => obj(p) && obj(p.tip) && str(p.tip.name, 500) && str(p.tip.description, 500)
+    && str(p.tip.key, 40) && str(p.tip.detail, 2048) && bool(p.tip.dark) && bool(p.preferSide)
+    && obj(p.rect) && ['x', 'y'].every(k => num(p.rect[k], -1e5, 1e5)) && ['width', 'height'].every(k => num(p.rect[k], 0, 1e5))
+    && obj(p.size) && ['width', 'height'].every(k => num(p.size[k], 1, 1e4)) },
+  'tip-prepare': { roles: CHROME }, 'tip-hide': { roles: CHROME },
   'usage-pop-show': { roles: CHROME, shape: ([r]) => obj(r) && num(r.right, -1e5, 1e5) && num(r.bottom, -1e5, 1e5) && gauge(r.kind) && opt(r.sel, text) },
   'usage-win-menu': { roles: CHROME, shape: a => kind(a[0]) && opt(a[1], text) },
   // 使用量表示: a gauge's click opens that provider's login window (main: only while the gauge is shown); the popover's link opens the

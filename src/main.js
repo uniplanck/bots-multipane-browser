@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const CPU = require('./cpu-meter');
+const { placeTooltip } = require('./tooltip-layout');
 
 // dev/test hook: MPB_SWITCHES="name=value;name2" appends Chromium switches before the app is ready
 for (const sw of String(process.env.MPB_SWITCHES || '').split(';').filter(Boolean)) { const i = sw.indexOf('='); i < 0 ? app.commandLine.appendSwitch(sw) : app.commandLine.appendSwitch(sw.slice(0, i), sw.slice(i + 1)); }
@@ -441,8 +442,23 @@ ipcOn('focus-other', (r, wid, pid) => {
   if (c.win.isMinimized()) c.win.restore();
   c.win.show(); c.win.focus(); c.focusPaneById(Number(pid));
 });
-const APPROVE_URL = process.env.MULTIPANE_APPROVE_URL || 'https://grok.com/bot/00000000-0000-0000-0000-000000000000';   // 承認Bot popup (now opens the Helper bot)
+const DEFAULT_APPROVE_URL = '';
+const DEFAULT_APPROVE_LABEL = 'Helper';
+const AS = require('./approve-setting');
 const APPROVE_KEEP_MS = 5 * 60000;                                                   // keep the hidden popup page this long for a fast reopen, then free its memory
+const approveEffective = () => AS.effective(settings, process.env.MULTIPANE_APPROVE_URL, DEFAULT_APPROVE_URL, DEFAULT_APPROVE_LABEL);
+function setApproveSettings(value) {
+  if (value) {
+    const url = AS.normalizeUrl(value.url);
+    if (!url || !AS.validLabel(value.label)) return false;
+    settings.approveUrl = url;
+    settings.approveLabel = AS.label(value.label, DEFAULT_APPROVE_LABEL);
+  } else { delete settings.approveUrl; delete settings.approveLabel; }
+  save();
+  ctxs.forEach(c => c.approveChanged());
+  broadcast();
+  return true;
+}
 
 // ---- links opened from page content (bot output, citations, attachments, popups) ----
 // Like the native Grok Bot app: web links that leave grok.com open in the default browser (target=_blank, window.open, and a plain link on a
@@ -474,6 +490,7 @@ function openExt(url, why, gesture = false) {
   shell.openExternal(r.href).catch(() => {});
 }
 function appLoad(wc, url) {                                  // every loadURL main starts (#72): web pages and about:blank only
+  if (wcReg.get(wc.id)?.role === 'approve' && !AS.grokPage(url)) { navBlocked('E_URL', 'approve app load', wc); return; }
   const code = NAV.appLoad(url);
   if (code) { navBlocked(code, 'app load', wc); return; }
   wc.loadURL(url).catch(() => {});
@@ -512,6 +529,12 @@ function guardNavigation(wc, kind = 'pane') {
   wc.on('will-navigate', (e, url0) => {
     if (e.isMainFrame === false) return;
     const url = typeof url0 === 'string' ? url0 : e.url;
+    if (kind === 'approve' && !AS.grokPage(url)) {
+      e.preventDefault();
+      const r = NAV.navigate(url, { pane: true, from: wc.getURL() });
+      if (r.action === 'browser') openExt(url, 'approve external link', recentGesture(wc)); else navBlocked(r.code || 'E_URL', 'approve navigate', wc);
+      return;
+    }
     const r = NAV.navigate(url, { pane: own, from: wc.getURL() });
     if (r.action === 'allow') return;
     e.preventDefault();
@@ -520,6 +543,7 @@ function guardNavigation(wc, kind = 'pane') {
   });
   wc.on('will-redirect', (e, url0, inPlace, isMain0) => {
     if ((typeof e.isMainFrame === 'boolean' ? e.isMainFrame : isMain0) !== true) return;
+    if (kind === 'approve' && !AS.grokPage(typeof url0 === 'string' ? url0 : e.url)) { e.preventDefault(); navBlocked('E_URL', 'approve redirect', wc); return; }
     const code = NAV.redirect(typeof url0 === 'string' ? url0 : e.url);
     if (code) { e.preventDefault(); navBlocked(code, 'redirect', wc); }
   });
@@ -643,6 +667,50 @@ setInterval(() => {
 // ======================= one app window =======================
 function makeWindow(spec = {}, { restore = false } = {}) {
 let win, overlay, overlayOpen = false, overlayMode = '';
+let tipWindow = null, tipReady = null, tipSeq = 0, tipCurrent = null;
+// Pane WebContentsViews cover the chrome DOM below their 30px headers. A tiny,
+// transparent child window stays above them without moving views; native mouse
+// passthrough and a non-focusable window preserve pane and overlay input.
+function hideTip() {
+  tipSeq++; tipCurrent = null;
+  if (tipWindow && !tipWindow.isDestroyed()) tipWindow.hide();
+}
+function dismissTip() {
+  hideTip();
+  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('tip-dismiss');
+}
+function prepareTip() {
+  if (!win || win.isDestroyed() || !win.isVisible() || !win.isFocused() || overlayOpen) return;
+  if (!tipWindow || tipWindow.isDestroyed()) {
+    tipWindow = new BrowserWindow({ parent: win, show: false, frame: false, transparent: true, focusable: false,
+      skipTaskbar: true, excludedFromShownWindowsMenu: true, resizable: false, movable: false, hasShadow: false, backgroundColor: '#00000000',
+      webPreferences: { preload: path.join(__dirname, 'tooltip-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    tipWindow.setIgnoreMouseEvents(true);
+    guardUi(tipWindow.webContents);
+    const created = tipWindow;
+    tipReady = created.loadFile(path.join(__dirname, 'tooltip.html')).then(() => true, () => {
+      if (!created.isDestroyed()) created.destroy();
+      return false;
+    });
+  }
+}
+function showTip(p) {
+  if (!win || win.isDestroyed() || !win.isVisible() || !win.isFocused() || overlayOpen) return;
+  tipCurrent = p;
+  const seq = ++tipSeq;
+  prepareTip();
+  const child = tipWindow;
+  tipReady.then(ready => {
+    if (!ready || seq !== tipSeq || child.isDestroyed() || win.isDestroyed() || !win.isVisible() || !win.isFocused() || overlayOpen) return;
+    const content = win.getContentBounds();
+    const avoid = popOpen && overlay ? overlay.getBounds() : null;
+    const r = placeTooltip(p.rect, p.size, { width: content.width, height: content.height }, p.preferSide, avoid);
+    child.setBounds({ x: content.x + r.x, y: content.y + r.y, width: r.width, height: r.height });
+    const entering = !child.isVisible();
+    child.webContents.send('tip-display', { ...p.tip, entering });
+    if (entering) child.showInactive();
+  });
+}
 let queueNote = '';                        // (#01) why the last choice from the 対応キュー was not carried out (shown in the open list until the next one)
 let queueNow = [];                         // (#01) the list the last sendState built
 let navWait = null, navSeq = 0;            // (#51) a keyboard move to a pane not on screen yet (pane-navigation.js mayFocus / holds)
@@ -952,6 +1020,7 @@ function sendState(cs = cells()) {
     platform: process.platform, dark: nativeTheme.shouldUseDarkColors, colors: COLORS,
     canReopen: CP.canReopen(closedStack, panes.length, MAX), globalZoom: gZoom(), syncCols: settings.syncCols !== false, canSync: getRows().length >= 2, splitters: splitters(), sleepGlobal: settings.sleepWaiting !== false, workspaces: Object.keys(workspaces), activeWs: workspaces[activeWs] ? activeWs : null, favorites, windowCount: ctxs.length, store: storeState(), chkHold: probeAuthHold,
     usage: UC.view(settings),                                // 使用量表示: which gauges show and where each one's numbers come from
+    approve: (() => { const a = approveEffective(); return { label: a.label, configured: !!a.url, source: a.source }; })(),
     panes: panes.map((p, i) => {
       const wc = p.view.webContents, lt = lqView(p), rv = RP.view(p.rcv);   // its load in the queue (#31): waiting (with its place) / running; (#32) recovery
       return { id: p.id, index: i, url: paneUrl(p), title: displayTitle(p), name: p.name || '', color: p.color || 'none',
@@ -1924,6 +1993,9 @@ function addPane(spec = {}, { focus = true, defer = false, asleep = null, from =
   });
   wc.on('focus', () => paneGotFocus(p));
   wc.on('before-mouse-event', (e, m) => { if (m.type === 'mouseDown' && !p.sleeping) focusPane(panes.indexOf(p)); });   // native input, never a fix's synthetic click
+  wc.on('before-mouse-event', (e, m) => {
+    if (m.type === 'mouseDown' || m.type === 'mouseWheel' || (m.type === 'mouseMove' && tipWindow?.isVisible())) dismissTip();
+  });
   wc.on('before-input-event', (e, input) => {
     if (navHolds(p, input)) { if (!handleKey(input, p)) diag.rec('nav', 'HELD', { p: p.id }, 60000); e.preventDefault(); return; }   // (#51) meant for the pane being woken: not typed here
     if (input.type === 'keyDown' && !input.meta && !input.control) { clearUnread(p); p.inputRev++; } if (handleKey(input, p)) e.preventDefault();   // a key typed: the input revision moves (#11)
@@ -2083,6 +2155,7 @@ function handleKey(input, pane) {
   const k = input.key.toLowerCase();
   const mod = isMac ? input.meta : input.control;
   if (k === 'escape' && !mod && !input.alt && !input.shift) {
+    dismissTip(); // Escape may arrive in the focused pane rather than the chrome document.
     if (dock) { dockEnd('ESC'); return true; }                // (dock) a header drag: cancelled, nothing changes
     if (overlayOpen) { closeOverlay(); return true; }
     if (pane?.pcMax) return false;                         // Esc closes the page's computer view first (the pane then returns to normal)
@@ -2126,27 +2199,29 @@ function approveRect() {
   const W = Math.max(420, Math.min(w - 24, Math.round(w * 0.6))), H = Math.max(320, Math.min(h - 24, Math.round(h * 0.6)));
   return { x: Math.round((w - W) / 2), y: Math.round((h - H) / 2), width: W, height: H };
 }
-function ensureApprove() {
+function ensureApprove(url) {
   if (approve && !approve.webContents.isDestroyed()) return approve;
+  if (!AS.normalizeUrl(url)) return null;
   approve = new WebContentsView({ webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false } });
   approve.setBorderRadius?.(14);
   approve.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1c1c1e' : '#ffffff');
   const wc = approve.webContents;
   rememberKeyboard(wc);
   regWc(wc, 'approve', { ctx });                             // no preload: registered so that nothing from it is ever accepted
-  approvePane = { id: 'approve', view: approve, url: APPROVE_URL, botTarget: APPROVE_URL, loadedAt: Date.now(), lastReload: Date.now() };   // a pane-like record so the bot-page fixes (router hop, retries) work here too
+  const createdPane = approvePane = { id: 'approve', view: approve, url, botTarget: url, loadedAt: Date.now(), lastReload: Date.now() };   // a pane-like record so the bot-page fixes (router hop, retries) work here too
   wc.setWindowOpenHandler(d => linkOpen(wc, d));
   guardNavigation(wc, 'approve');
-  wc.on('did-finish-load', () => { if (approvePane) { approvePane.loadedAt = Date.now(); onGrokLoad(approvePane); } });
+  wc.on('did-finish-load', () => { if (approvePane === createdPane && !wc.isDestroyed()) { createdPane.loadedAt = Date.now(); onGrokLoad(createdPane); } });
   wc.on('dom-ready', () => normalizeHostZoom(wc));
   wc.on('before-input-event', (e, input) => { if (input.type === 'keyDown' && input.key === 'Escape' && !input.meta && !input.control && !input.alt && !input.shift) { e.preventDefault(); closeOverlay(); } });
-  loadInto(wc, APPROVE_URL);
+  loadInto(wc, url);
   win.contentView.addChildView(approve); approve.setVisible(false);
   return approve;
 }
 function destroyApprove() {
   clearTimeout(approveTimer); approveTimer = null;
   if (!approve || approveOpen) return;
+  if (approvePane) { approvePane.grokToken = null; approvePane.grokPending = null; }
   try { win.contentView.removeChildView(approve); } catch {}
   unregWc(r => r.wc === approve.webContents);
   try { if (!approve.webContents.isDestroyed()) approve.webContents.close(); } catch {}
@@ -2155,20 +2230,40 @@ function destroyApprove() {
 function openApprove() {
   dlog('approve', 'open requested', approveOpen);
   if (approveOpen) { closeOverlay(); return; }
+  const { url } = approveEffective();
+  if (!url) { openApproveSettings(); return; }
   if (overlayOpen) closeOverlay();
   clearTimeout(approveTimer); approveTimer = null;
   if (approve && !approve.webContents.isDestroyed() && approve.webContents.isCrashed()) destroyApprove();   // (#32) the hidden copy's renderer is gone: a new one
   const had = !!(approve && !approve.webContents.isDestroyed());
-  ensureApprove();
+  if (!ensureApprove(url)) return;
   approveOpen = true;
   const r = approveRect(); dlog('approve', 'rect', JSON.stringify(r), 'reused', had);
   openOverlay('approve', { rect: r });                       // dim backdrop (click = close) + shadow
   win.contentView.removeChildView(approve); win.contentView.addChildView(approve);
   approve.setBounds(r); approve.setVisible(true); approve.webContents.focus();
   if (had) {                                                 // reopened from the hidden copy: make sure the chat is actually showing
-    const wc = approve.webContents, id = APPROVE_URL.match(GROK_BOT_RE)[1];
-    wc.executeJavaScript(GROK_RENDERED(id)).then(ok => { if (!ok && approveOpen && !wc.isLoading() && !approvePane?.grokToken) reloadPane(approvePane); }).catch(() => {});
+    const wc = approve.webContents, id = url.match(GROK_BOT_RE)?.[1];
+    if (id) wc.executeJavaScript(GROK_RENDERED(id)).then(ok => { if (!ok && approveOpen && approve?.webContents === wc && !wc.isLoading() && !approvePane?.grokToken) reloadPane(approvePane); }).catch(() => {});
   }
+}
+function openApproveSettings() {
+  if (approveOpen) hideApprove();
+  openOverlay('approve-settings', { approve: approveEffective() });
+}
+function approveChanged() {
+  const wasOpen = approveOpen;
+  if (wasOpen) { approveOpen = false; try { approve?.setVisible(false); } catch {} }
+  destroyApprove();
+  if (!wasOpen) return;
+  const { url } = approveEffective();
+  if (!url) { closeOverlay(); openApproveSettings(); return; }
+  if (!ensureApprove(url)) return;
+  approveOpen = true;
+  const r = approveRect();
+  overlay.webContents.send('approve-rect', r);
+  win.contentView.removeChildView(approve); win.contentView.addChildView(approve);
+  approve.setBounds(r); approve.setVisible(true); approve.webContents.focus();
 }
 function hideApprove() {
   approveOpen = false;
@@ -2177,6 +2272,7 @@ function hideApprove() {
 }
 function openOverlay(mode, extra = {}) {
   if (!overlay) return;
+  dismissTip();
   if (overlayOpen && overlayMode === 'update-first' && mode !== 'update-first') updateChoice(true);
   dockEnd('OVERLAY');                                          // (dock) a header drag ends (the views come back) before anything is shown over them
   popOpen = false; clearTimeout(popTimer);
@@ -2189,7 +2285,9 @@ function openOverlay(mode, extra = {}) {
   if (!updateMode) sendState();
   overlay.webContents.focus();
   if (updateMode) { overlay.webContents.send('overlay-open', { mode, ...extra, dark: nativeTheme.shouldUseDarkColors }); return; }
+  if (mode === 'approve-settings') { overlay.webContents.send('overlay-open', { mode, ...extra, dark: nativeTheme.shouldUseDarkColors }); return; }
   Promise.resolve().then(() => clipboard.readText()).catch(() => '').then(t => {   // sync or async depending on Electron version
+    if (!overlayOpen || overlayMode !== mode) return;         // an older palette / popup must not replace a newer settings screen
     const clip = String(t || '').trim();
     overlay.webContents.send('overlay-open', { mode, ...extra,
       clipboardUrl: /^https?:\/\/\S+$/.test(clip) && clip.length < 500 ? clip : '' });
@@ -2207,6 +2305,14 @@ function closeOverlay() {
   keyboardFocus = panes[focused]?.view.webContents;
   panes[focused]?.view.webContents.focus();
 }
+function approvePaneItem(p) {
+  return { label: 'このBotを右上ボタンにする', enabled: !!AS.normalizeUrl(paneUrl(p)), click: () => {
+    if (!panes.includes(p)) return;
+    const url = AS.normalizeUrl(paneUrl(p));
+    const label = AS.paneLabel(p.name || displayTitle(p));
+    if (url && setApproveSettings({ url, label })) win.webContents.send('approve-saved');
+  } };
+}
 function paneMenu(id) {
   const p = byId(id); if (!p) return;
   const tpl = [
@@ -2222,6 +2328,7 @@ function paneMenu(id) {
       { type: 'separator' },
       { label: `全体ズーム（${Math.round(gZoom() * 100)}%） 拡大`, click: () => setGlobalZoom(gZoom() + 0.1) }, { label: '全体ズーム 縮小', click: () => setGlobalZoom(gZoom() - 0.1) }, { label: '全体ズーム リセット', click: () => setGlobalZoom(1) }] },
     { label: 'お気に入りに追加', enabled: !!paneUrl(p), click: () => addFavorite(paneUrl(p), p.name || displayTitle(p)) },
+    approvePaneItem(p),
     { type: 'separator' },
     { label: maximizedId === id ? '元のサイズに戻す' : '最大化', click: () => toggleMaximize(id) },
     pcItem(p),
@@ -2311,6 +2418,8 @@ function runAction(a) {
     case 'ws-save-prompt': openOverlay('ws-save'); break;
     case 'ws-save': saveWorkspace(a.value); closeOverlay(); break;
     case 'approve-open': closeOverlay(); openApprove(); break;
+    case 'approve-save': if (overlayMode === 'approve-settings' && setApproveSettings({ url: a.url, label: a.label })) closeOverlay(); break;
+    case 'approve-reset': if (overlayMode === 'approve-settings') { setApproveSettings(null); closeOverlay(); } break;
     case 'ws-overwrite': closeOverlay(); overwriteWorkspace(String(a.name || ''), !!a.confirm); break;
     case 'ws-load': closeOverlay(); loadWorkspace(a.name); break;
     case 'ws-delete': delete workspaces[a.name]; save(); buildMenu(); broadcast(); break;
@@ -2559,10 +2668,11 @@ function popShow(rect) {
   if (rect && typeof rect === 'object') { popKind = [...UC.WEB, 'antigravity'].includes(rect.kind) ? rect.kind : 'grok'; popSel = String(rect.sel || '').slice(0, 120); }
   clearTimeout(popTimer); popRect = rect && typeof rect === 'object' ? { right: Number(rect.right) || 0, bottom: Number(rect.bottom) || 0 } : popRect;
   if (!popOpen) { popOpen = true; overlay.setBounds(popBounds(360)); bringOverlayToFront(); overlay.setVisible(true); }
+  if (tipCurrent) showTip(tipCurrent); // keep the usage popover unobscured, including fast tooltip switches
   overlay.webContents.send('usage-pop', popKind === 'grok' ? { kind: 'grok', ...usageDetail() } : popKind === 'antigravity' ? { kind: popKind, src: UC.source(settings, popKind) }
     : { kind: popKind, sel: popSel, ...(AIU.peek(popKind) || { ok: false, err: 'まだ取得していません', buckets: [] }) });
 }
-function popHide() { clearTimeout(popTimer); if (!popOpen) return; popOpen = false; if (!overlayOpen) overlay.setVisible(false); }
+function popHide() { clearTimeout(popTimer); if (!popOpen) return; popOpen = false; if (!overlayOpen) { overlay.setVisible(false); if (tipCurrent) showTip(tipCurrent); } }
 function popLater(ms = 350) { clearTimeout(popTimer); popTimer = setTimeout(popHide, ms); }
 function chipMenu(id) {
   const p = byId(id); if (!p) return;
@@ -2573,6 +2683,7 @@ function chipMenu(id) {
     { label: '今すぐスリープ（待機中・終了のみ）', enabled: canSleep(p, panes.indexOf(p), true), click: () => sleepNowAsk(p) },
     { label: '新しいペインに複製', enabled: panes.length < MAX, click: () => { addPane({ ...paneSpec(p), name: p.name ? p.name + '2' : '' }); relayout(true); } },
     { label: 'お気に入りに追加', enabled: !!paneUrl(p), click: () => addFavorite(paneUrl(p), p.name || displayTitle(p)) },
+    approvePaneItem(p),
     { label: maximizedId === id ? '元のサイズに戻す' : '最大化', click: () => toggleMaximize(id) },
     pcItem(p),
     { type: 'separator' },
@@ -2584,6 +2695,9 @@ function chipMenu(id) {
 const ui = {}, paneIpc = {};
 const on = (ch, fn) => { ui[ch] = fn; registerUi(ch); };
 const paneOn = (ch, fn) => { paneIpc[ch] = fn; registerPane(ch); };
+on('tip-show', showTip);
+on('tip-prepare', prepareTip);
+on('tip-hide', hideTip);
 on('navigate', (id, url) => { const p = byId(id); if (p) openIn(p, url); });
 on('back', id => goHist(byId(id), -1));
 on('forward', id => goHist(byId(id), 1));
@@ -2615,7 +2729,7 @@ on('usage-pop-show', r => popShow(r));
 on('usage-win-menu', (kind, sel) => usageWinMenu(String(kind), String(sel || '')));
 on('usage-pop-keep', () => clearTimeout(popTimer));
 on('usage-pop-leave', () => popLater());
-on('usage-pop-size', h => { if (popOpen && !overlayOpen) overlay.setBounds(popBounds(Number(h))); });
+on('usage-pop-size', h => { if (popOpen && !overlayOpen) { overlay.setBounds(popBounds(Number(h))); if (tipCurrent) showTip(tipCurrent); } });
 on('ws-menu', () => wsMenu());
 on('approve-open', () => openApprove());
 on('split-start', (axis, i, row) => splitStart(String(axis), Number(i), row == null ? undefined : Number(row)));
@@ -2729,7 +2843,7 @@ function snapshot() {
 
 const ctx = { snapshot, ui, paneIpc, get win() { return win; }, get overlay() { return overlay; }, get overlayOpen() { return overlayOpen; }, get overlayMode() { return overlayMode; }, get panes() { return panes; },
   draftConfig() { panes.forEach(p => { if (!p.view.webContents.isDestroyed()) p.view.webContents.send('mpb:draft-config', draftsEnabled()); }); },
-  reloadAll, sendState, newPane, closePane, toggleMaximize, togglePc, relayout, reopenClosed, setZoom, resetPaneZoom, setZoomIndiv, applyGlobalZoom, nextUnread, navKey, focusUrlBar, openOverlay, paneMenu, applyPreset,
+  reloadAll, sendState, newPane, closePane, toggleMaximize, togglePc, relayout, reopenClosed, setZoom, resetPaneZoom, setZoomIndiv, applyGlobalZoom, nextUnread, navKey, focusUrlBar, openOverlay, openApproveSettings, approveChanged, paneMenu, applyPreset,
   sleepTick, probeNext, recoverNext, loadWorkspace, overwriteWorkspace, clearAll, showViews, get layout() { return layout; }, get focusedPane() { return panes[focused]; },
   askClose, askReload, autoReload, openLink,                 // through the input guard (#11)
   get activeWs() { return workspaces[activeWs] ? activeWs : null; }, wsRenamed(o, n) { if (activeWs === o) activeWs = n; },
@@ -2755,13 +2869,17 @@ if (restore && spec.window?.maximized && !process.env.MPB_SCREENSHOT) win.maximi
 win.loadFile(path.join(__dirname, 'index.html'));
 win.once('ready-to-show', () => { win.show(); updateFirstWhenReady(ctx); });
 win.webContents.on('before-input-event', (e, input) => { if (handleKey(input)) e.preventDefault(); });
-win.on('resize', () => relayout());
+win.on('resize', () => { dismissTip(); relayout(); });
+win.on('move', dismissTip);
 win.on('moved', save); win.on('resized', save);
 win.on('focus', () => { setFocused(focused); buildMenu(); });
 win.on('blur', () => dockEnd('BLUR'));                       // (dock) another app / window in front: a header drag ends, the views come back
+win.on('blur', dismissTip);
 win.webContents.on('render-process-gone', () => dockEnd('GONE'));   // (dock) the window's own page is gone: no dragend will come
+win.webContents.on('render-process-gone', hideTip);
 win.on('close', () => {
   dockEnd('WINDOW');
+  hideTip();
   snapshot();
   lq.cancel(t => t.win === ctx, 'WINDOW');                   // (#31) this window's loads / check: the slots go back once its views / check window are gone
   try { approveOpen = false; destroyApprove(); } catch {}
@@ -2959,6 +3077,7 @@ function buildMenu() {
     { label: 'レイアウト', submenu: PRESET_KEYS.map((k, i) => acc(`CmdOrCtrl+${i + 1}`, () => cur()?.applyPreset(k),
       `${k}（横${PRESETS[k][0]}×縦${PRESETS[k][1]}）`, { type: 'radio', checked: c?.layout === k })) },
     { label: '設定', submenu: [
+      { label: '右上ボタンのBotを設定…', click: () => cur()?.openApproveSettings() },
       { label: 'アップデート', submenu: [
         { label: updateStatus(), enabled: false },
         { label: '今すぐ確認・更新…', click: () => { updateOpen(); updateCheck(false); } },
