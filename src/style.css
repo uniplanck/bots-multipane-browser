@@ -116,7 +116,7 @@ body.docking .pane .dockshot[src]{display:block}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ---- favorites bar ---- */
-#favbar{position:fixed;left:0;right:0;top:46px;height:30px;display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--bar);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--line);z-index:4}
+#favbar{position:fixed;left:0;right:0;top:46px;height:56px;display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--bar);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--line);z-index:4}
 #favbar.drop-over{background:color-mix(in srgb,var(--accent) 18%,var(--bar))}
 /* the Grok button (reads the Bot list again; spins while it reads) + its short outcome; pins / favorites / grok.com's sections follow */
 #fav-star{display:grid;place-items:center;width:26px;height:22px;flex:none;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--ctl);color:var(--text);transition:background .12s}
@@ -126,22 +126,31 @@ body.docking .pane .dockshot[src]{display:block}
 @keyframes gspin{to{transform:rotate(360deg)}}
 #gbar-note{flex:none;max-width:360px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--dim);font-size:11px}
 #gbar-note:empty{display:none}
+/* (2段, gbar-rows.js) one row per account: A (account1) above, B (アカウント2) below (no badge: the row says which); the bar is 2 rows high
+   (main.js TOPBAR). A row with no item while the other has some says "A 未ログイン" / "B 未ログイン" */
+#gbar-rows{flex:1;min-width:0;display:flex;flex-direction:column;align-self:stretch;justify-content:center}
+.grow{display:flex;align-items:center;gap:6px;height:27px;min-width:0}
+.grow+.grow{border-top:1px solid var(--line)}
+#favs-y.gnone::after,#favs.gnone::after{content:"A 未ログイン";flex:none;color:var(--dim);font-size:11px}
+#favs-y.gnone::after{content:"B 未ログイン"}
 /* one page of the bar at a time (renderer.js / gbar-pages.js): no sideways scroll; a fixed height so a page change never resizes it */
-#favs{display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0;flex:1;height:22px}
-#gbar-next{margin-left:auto;color:var(--dim);font-size:11.5px}
-#gbar-next:hover{color:var(--text)}
-#fav-hint{color:var(--dim);font-size:11px;position:absolute;left:46px;pointer-events:none}
+#favs-y,#favs{display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0;flex:1;height:22px}
+#gbar-next-y,#gbar-next{margin-left:auto;color:var(--dim);font-size:11.5px}
+#gbar-next-y:hover,#gbar-next:hover{color:var(--text)}
+#fav-hint{color:var(--dim);font-size:11px;position:absolute;left:42px;top:6px;pointer-events:none}
 #gbar-note:not(:empty)~#fav-hint{display:none!important}
-.fav-btn.gbot{max-width:136px;padding:0 7px 0 4px;border-color:transparent}
-.gic{width:16px;height:16px;border-radius:50%;flex:none;object-fit:cover}
-.gbot .fic{width:16px;height:16px;border-radius:50%}
+.fav-btn.gbot{max-width:152px;padding:0 7px;border-color:transparent}
+/* (2アカウント) the round account badge: A (account1) blue / B (アカウント2) yellow; first in the pane header (not in the bar) */
+.acct{flex:none;width:15px;height:15px;border-radius:50%;display:inline-grid;place-items:center;font-size:9.5px;font-weight:800;line-height:1;font-style:normal;pointer-events:auto}
+.acct-A{background:#2f6fed;color:#fff}
+.acct-B{background:#f5c518;color:#2b2100}
 /* Group frame stays inside the rounded button in every mode; no extra width for paging. Bots keep the same invisible border geometry. */
 .fav-btn.gbot.grp{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dim) 75%,transparent)}
 /* Open/active frames use the existing border space in every mode, so pages never shift.
    Active: the border + a second inner pixel and a small glow. Groups keep a separate inset frame. */
-#favs .fav-btn.gopen{border-color:var(--accent)}
-#favs .fav-btn.gactive{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent),0 0 4px color-mix(in srgb,var(--accent) 65%,transparent)}
-#favs .fav-btn.gactive.grp{box-shadow:inset 0 0 0 1px var(--accent),inset 0 0 0 2px color-mix(in srgb,var(--dim) 75%,transparent),0 0 4px color-mix(in srgb,var(--accent) 65%,transparent)}
+#favs-y .fav-btn.gopen,#favs .fav-btn.gopen{border-color:var(--accent)}
+#favs-y .fav-btn.gactive,#favs .fav-btn.gactive{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent),0 0 4px color-mix(in srgb,var(--accent) 65%,transparent)}
+#favs-y .fav-btn.gactive.grp,#favs .fav-btn.gactive.grp{box-shadow:inset 0 0 0 1px var(--accent),inset 0 0 0 2px color-mix(in srgb,var(--dim) 75%,transparent),0 0 4px color-mix(in srgb,var(--accent) 65%,transparent)}
 .gsec{position:relative;display:inline-flex;align-items:center;gap:3px;flex:none;padding:0 4px;border:0;border-radius:4px;background:transparent;color:var(--dim);font-size:10px;font-weight:600;white-space:nowrap;cursor:pointer}
 .gsec:hover{background:var(--ctl);color:var(--text)}
 .gsec:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
@@ -152,18 +161,16 @@ body.docking .pane .dockshot[src]{display:block}
 .gsec.gcollapsed::after{background:var(--badge)}
 .gsec.gcollapsed.gopen::before,.gsec.gcollapsed.gunread::after{display:inline-block}
 .gsep{flex:none;width:1px;height:16px;margin:0 4px;background:var(--line2)}
-/* 表示モード (right-click on the Grok button; gbar-mode.js): セミコンパクト = icon + a name of 4 units, smaller headings; コンパクト = the icon only
-   (none: its first letter), headings of 2 units; 次へ › stays as it is. Every mode is measured again for the pages (the class is set before) */
-#favs.gm-semi .fav-btn:not(#gbar-next){padding:0 6px}
-#favs.gm-semi .fav-btn.gbot{padding:0 6px 0 3px;gap:4px}
-#favs.gm-compact .fav-btn:not(#gbar-next){padding:0 3px;gap:0}
-#favs.gm-semi .gsec,#favs.gm-compact .gsec{font-size:9px;padding:0 3px}
-.fav-btn{display:flex;align-items:center;gap:5px;width:auto;max-width:96px;overflow:hidden;white-space:nowrap;flex:none;height:22px;border:1px solid var(--line);background:var(--ctl);border-radius:6px;padding:0 8px;color:var(--text);transition:background .12s,transform .12s}
+/* 表示モード (right-click on the Grok button; gbar-mode.js): セミコンパクト = a name of 4 units, smaller headings; コンパクト = a name of 2 units,
+   headings of 2 units; 次へ › stays as it is. Every mode is measured again for the pages (the class is set before) */
+#favs-y.gm-semi .fav-btn:not(#gbar-next-y),#favs.gm-semi .fav-btn:not(#gbar-next){padding:0 6px}
+#favs-y.gm-compact .fav-btn:not(#gbar-next-y),#favs.gm-compact .fav-btn:not(#gbar-next){padding:0 3px;gap:0}
+#favs-y.gm-semi .gsec,#favs-y.gm-compact .gsec,#favs.gm-semi .gsec,#favs.gm-compact .gsec{font-size:9px;padding:0 3px}
+.fav-btn{display:flex;align-items:center;gap:5px;width:auto;max-width:112px;overflow:hidden;white-space:nowrap;flex:none;height:22px;border:1px solid var(--line);background:var(--ctl);border-radius:6px;padding:0 8px;color:var(--text);transition:background .12s,transform .12s}
 .fav-btn:hover{background:var(--ctl-hi)}
 .fav-btn:active{transform:scale(.97)}
 .fav-btn.drop-over{outline:2px dashed var(--accent)}
 .fav-btn.drag-src{opacity:.5}
-.fic{width:14px;height:14px;border-radius:4px;background:var(--ctl-hi);font-size:9px;font-weight:700;display:grid;place-items:center;flex:none;color:var(--dim)}
 .flabel{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:clip;text-align:left;font-size:11.5px}
 .cfav.ccount{min-width:14px;width:auto;height:14px;padding:0 3px;border-radius:7px;background:#8e8e93;color:#fff;font-size:10px;font-weight:700;line-height:14px;font-variant-numeric:tabular-nums}
 .cfav.ccount.hot{background:var(--glow)}

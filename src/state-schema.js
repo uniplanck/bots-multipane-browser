@@ -20,6 +20,10 @@
 // (進捗サイドバー) settings.sidebarOpen (boolean), sidebarWidth (220-560), sidebarUrl (sidebar-rules.js: https / loopback http, normalised) and
 // sidebarConfirmOpen (boolean: the former 開く前に確認する, kept as it is in the file but ignored): optional, no new schema (none = closed, 300 px, no URL). A non-boolean flag /
 // unusable URL is dropped, a width out of range clamped, as a repair.
+// (2アカウント) a pane spec / favorite may carry `acct` (accounts.js: the account it is open in, written only when it is not the default
+// session's) and settings.defaultAcct says which account the default session's login is; settings.approveAcct: the account the 右上ボタン's Bot
+// opens in (written the same way: only when it is not the default session's): optional, no new schema (none = as before, an older
+// app ignores them). An unknown account is dropped as a repair (the pane is back on the default login); validate() wants a known one.
 // (ペイン色) settings.botColors (pane-color.js: Bot URL / agentId -> a muted colour name): optional, no new schema. A broken map is cleaned as a repair.
 const SS = require('./session-snapshot');
 const DL = require('./dock-layout');
@@ -30,6 +34,7 @@ const GS = require('./gbar-sections');
 const AS = require('./approve-setting');
 const SR = require('./sidebar-rules');
 const PC = require('./pane-color');
+const AC = require('./accounts');
 const { DRAFT } = require('./pane-rules');
 const BOOL_FLAGS = ['usageShow', 'usageV2', 'saveDrafts', 'approveKeepAwake', 'sidebarOpen', 'sidebarConfirmOpen'];
 const SCHEMA_VERSION = 1;
@@ -44,7 +49,8 @@ const paneCount = g => Array.isArray(g.panes) ? g.panes.length : 0;
 const SPEC_TYPES = { url: 'string', name: 'string', color: 'string', reloadMinutes: 'number', zoom: 'number', muted: 'boolean', zoomIndiv: 'boolean', sleep: 'boolean' };
 function specErrors(s, at) {
   if (!isObj(s)) return [`${at}: not an object`];
-  return Object.entries(SPEC_TYPES).filter(([k, t]) => has(s, k) && typeof s[k] !== t).map(([k, t]) => `${at}.${k}: not a ${t}`);
+  return [...Object.entries(SPEC_TYPES).filter(([k, t]) => has(s, k) && typeof s[k] !== t).map(([k, t]) => `${at}.${k}: not a ${t}`),
+    ...(s.acct !== undefined && !AC.isAcct(s.acct) ? [`${at}.acct: not an account`] : [])];
 }
 // a window (windows[i]) or a saved workspace: both hold a layout, up to MAX_PANES pane specs and their row structure
 function groupErrors(g, at) {
@@ -77,6 +83,7 @@ function validate(doc) {
     doc.favorites.forEach((f, i) => {
       if (!isObj(f) || typeof f.url !== 'string') { e.push(`favorites[${i}]: no URL`); return; }
       if (has(f, 'label') && typeof f.label !== 'string') e.push(`favorites[${i}].label: not a string`);
+      if (f.acct !== undefined && !AC.isAcct(f.acct)) e.push(`favorites[${i}].acct: not an account`);
       if (seen.has(f.url)) e.push(`favorites[${i}]: duplicate URL`);
       seen.add(f.url);
     });
@@ -93,6 +100,8 @@ function validate(doc) {
     if (doc.settings.sidebarWidth !== undefined && SR.clampWidth(doc.settings.sidebarWidth) !== doc.settings.sidebarWidth) e.push('settings.sidebarWidth: not a width');
     if (doc.settings.sidebarUrl !== undefined && (typeof doc.settings.sidebarUrl !== 'string' || (doc.settings.sidebarUrl !== '' && SR.normalizeUrl(doc.settings.sidebarUrl) !== doc.settings.sidebarUrl))) e.push('settings.sidebarUrl: not a normalized URL');
     if (doc.settings.botColors !== undefined && !PC.validMap(doc.settings.botColors)) e.push('settings.botColors: not a clean colour map');
+    if (doc.settings.defaultAcct !== undefined && !AC.isAcct(doc.settings.defaultAcct)) e.push('settings.defaultAcct: not an account');
+    if (doc.settings.approveAcct !== undefined && !AC.isAcct(doc.settings.approveAcct)) e.push('settings.approveAcct: not an account');
   }
   if (!isObj(doc.workspaces)) e.push('workspaces: not an object');
   else Object.values(doc.workspaces).forEach((ws, i) => e.push(...groupErrors(ws, `workspaces#${i}`)));
@@ -140,15 +149,19 @@ function migrate(raw) {
     const c = { ...s }; delete c.draftId; fixes.push('draftId: dropped'); return c;
   }) };
   if (Array.isArray(windows)) windows = windows.map(w => fixDraftIds(w, false));
+  const badAcct = s => isObj(s) && s.acct !== undefined && !AC.isAcct(s.acct);
+  const dropAcct = (s, at) => { if (!badAcct(s)) return s; const c = { ...s }; delete c.acct; fixes.push(`${at}.acct: not an account, dropped`); return c; };
+  const fixAccts = (g, at) => !isObj(g) || !Array.isArray(g.panes) || !g.panes.some(badAcct) ? g : { ...g, panes: g.panes.map((s, i) => dropAcct(s, `${at}.panes[${i}]`)) };   // (2アカウント) unknown: the default login
+  if (Array.isArray(windows)) windows = windows.map((w, i) => fixAccts(w, `windows[${i}]`));
   let favorites = raw.favorites == null ? [] : raw.favorites;
   if (Array.isArray(favorites) && favorites.every(f => isObj(f) && typeof f.url === 'string')) {
     const seen = new Set(), uniq = favorites.filter(f => !seen.has(f.url) && seen.add(f.url));
     if (uniq.length < favorites.length) fixes.push(`favorites: ${favorites.length - uniq.length} duplicate URL(s) dropped`);
     if (uniq.length > MAX_FAVS) fixes.push(`favorites: kept the first ${MAX_FAVS}`);
-    favorites = uniq.slice(0, MAX_FAVS);
+    favorites = uniq.slice(0, MAX_FAVS).map((f, i) => dropAcct(f, `favorites[${i}]`));
   }
   let workspaces = raw.workspaces == null ? {} : raw.workspaces;
-  if (isObj(workspaces)) workspaces = Object.fromEntries(Object.entries(workspaces).map(([n, ws], i) => [n, fixDraftIds(fixSnaps(fixStacks(fixRows(ws, `workspaces#${i}`), `workspaces#${i}`), `workspaces#${i}`, true), true)]));
+  if (isObj(workspaces)) workspaces = Object.fromEntries(Object.entries(workspaces).map(([n, ws], i) => [n, fixDraftIds(fixSnaps(fixStacks(fixRows(ws, `workspaces#${i}`), `workspaces#${i}`), `workspaces#${i}`, true), true)]).map(([n, ws], i) => [n, fixAccts(ws, `workspaces#${i}`)]));
   let grok;                                                    // (Grok bar) unusable entries dropped, the rest cut to the limits
   if (raw.grok != null) { const c = GB.clean(raw.grok); grok = c.grok; if (!c.same) fixes.push('grok: repaired'); }
   let settings = raw.settings == null ? {} : raw.settings;
@@ -180,6 +193,12 @@ function migrate(raw) {
     const url = typeof settings.sidebarUrl === 'string' ? SR.normalizeUrl(settings.sidebarUrl) : '';
     settings = { ...settings }; if (url) settings.sidebarUrl = url; else delete settings.sidebarUrl;
     fixes.push(`settings.sidebarUrl: ${url ? 'repaired' : 'dropped'}`);
+  }
+  if (isObj(settings) && settings.defaultAcct !== undefined && !AC.isAcct(settings.defaultAcct)) {   // (2アカウント) unknown: account1, as before
+    settings = { ...settings }; delete settings.defaultAcct; fixes.push('settings.defaultAcct: not an account, dropped');
+  }
+  if (isObj(settings) && settings.approveAcct !== undefined && !AC.isAcct(settings.approveAcct)) {   // (2アカウント) unknown: the default login's, as before
+    settings = { ...settings }; delete settings.approveAcct; fixes.push('settings.approveAcct: not an account, dropped');
   }
   if (settings.botColors !== undefined) {
     const clean = PC.cleanMap(settings.botColors);

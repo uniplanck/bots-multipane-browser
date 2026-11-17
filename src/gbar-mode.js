@@ -1,6 +1,6 @@
 // Grokバーの表示モード: 通常 → セミコンパクト → コンパクト → 通常 (a right-click on the Grok button takes the next one; main keeps it in
 // settings.gbarMode). Pure; loaded by index.html as a plain script before renderer.js (no require there), required by main.js, state-schema.js
-// and the test. セミコンパクト: the icon + the name cut to SEMI display units; コンパクト: the icon only (none: its first letter), the name in the tooltip.
+// and the test. セミコンパクト: the name cut to SEMI display units; コンパクト: the name cut to 2 units (renderer.js gLabel), in full in the tooltip.
 // Display units (East Asian Width): W / F = 2; A (ambiguous) = AMB = 2 in this Japanese UI (lang=ja: Hiragino draws ①★※→… full-width, so a cut
 // name never grows past its room; an accented Latin / Greek / Cyrillic letter only leaves a unit unused); everything else 1; combining marks, ZWJ,
 // variation selectors and other format / control characters 0. A grapheme cluster (base + marks, an emoji ZWJ sequence, a flag, a skin tone, a
@@ -75,13 +75,6 @@ const GbarMode = (() => {
     }
     return out.trimEnd();
   }
-  // the first visible character (upper case when that stays one character), for a badge; none: '•'
-  function initial(name) {
-    const g = graphemes(String(name ?? '').trim()).find(x => eaw(x) > 0);
-    if (!g) return '•';
-    const u = g.toUpperCase();
-    return graphemes(u).length === 1 ? u : g;
-  }
-  return { MODES, LABEL, SEMI, AMB, isMode, normMode, nextMode, eaw, width, graphemes, clusters, truncate, initial, RANGES: { WIDE, AMBI } };
+  return { MODES, LABEL, SEMI, AMB, isMode, normMode, nextMode, eaw, width, graphemes, clusters, truncate, RANGES: { WIDE, AMBI } };
 })();
 if (typeof module === 'object' && module.exports) module.exports = GbarMode;

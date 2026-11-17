@@ -12,6 +12,7 @@
 // Nothing here is logged: names, URLs and icons stay in panes.json and the bar.
 const { stamp } = require('./state-backup');
 const { authPage } = require('./probe-policy');                // a clear sign-in page (the same test as the background check's)
+const AC = require('./accounts');                               // (2アカウント) a Bot may carry `acct`: the account whose list it was read from (none = the default session's)
 
 const HOME = 'https://grok.com/';
 const TIMEOUT_MS = 30000;                   // one read gives up after this long (the list stays as it was)
@@ -51,7 +52,7 @@ function clean(g) {
     if (!isObj(b) || !okId(b.id) || seen.has(b.id) || bots.length >= MAX_BOTS) continue;
     const name = text(b.name, NAME_MAX); if (!name) continue;
     seen.add(b.id);
-    bots.push({ id: b.id, url: 'https://grok.com/bot/' + b.id, name, isGroup: b.isGroup === true, section: text(b.section, SEC_MAX), order: bots.length, icon: icon(b.icon) });
+    bots.push({ id: b.id, url: 'https://grok.com/bot/' + b.id, name, isGroup: b.isGroup === true, section: text(b.section, SEC_MAX), order: bots.length, icon: icon(b.icon), ...(AC.isAcct(b.acct) ? { acct: b.acct } : {}) });
   }
   const aliases = {};
   const al = own(g, 'aliases');
@@ -91,12 +92,20 @@ function parse(raw, prev) {
 const withIcons = (bots, made) => bots.map(b => ({ ...b, icon: dataIcon(own(made, b.icon)) || httpsIcon(b.icon) || dataIcon(b.icon) }));
 
 // a good read -> the new list (the page's order and sections); gone ones leave the pins (their names stay, they come back with the Bot)
-function merge(prev, bots, now) {
-  const g = clean(prev).grok, old = new Map(g.bots.map(b => [b.id, b])), ids = new Set(bots.map(b => b.id));
-  const list = clean({ bots, aliases: g.aliases, pins: g.pins.filter(id => ids.has(id)), at: now }).grok;
-  return { grok: list, added: list.bots.filter(b => !old.has(b.id)).length, removed: g.bots.filter(b => !ids.has(b.id)).length,
-    changed: list.bots.filter(b => old.has(b.id) && (old.get(b.id).name !== b.name || old.get(b.id).section !== b.section)).length };
+// (2アカウント) ac = { acct, def }: the read was of that account's list alone - only its Bots are replaced (each kept with its account), the
+// other account's stay as they were, the accounts in accounts.js order. A Bot id is listed once: under the account read now
+function merge(prev, bots, now, ac) {
+  const g = clean(prev).grok, mine = ac ? b => AC.of(b.acct, ac.def) === ac.acct : () => true;
+  const old = new Map(g.bots.filter(mine).map(b => [b.id, b])), ids = new Set(bots.map(b => b.id));
+  const tag = ac ? AC.saved(ac.acct, ac.def) : undefined, read = bots.map(({ acct, ...b }) => (tag ? { ...b, acct: tag } : b));
+  const rest = g.bots.filter(b => !mine(b) && !ids.has(b.id)), all = ac && AC.IDS.indexOf(ac.acct) > 0 ? [...rest, ...read] : [...read, ...rest];
+  const kept = new Set(all.map(b => b.id));
+  const list = clean({ bots: all, aliases: g.aliases, pins: g.pins.filter(id => kept.has(id)), at: now }).grok;
+  return { grok: list, added: list.bots.filter(b => ids.has(b.id) && !old.has(b.id)).length, removed: [...old.keys()].filter(id => !ids.has(id)).length,
+    changed: list.bots.filter(b => old.has(b.id) && ids.has(b.id) && (old.get(b.id).name !== b.name || old.get(b.id).section !== b.section)).length };
 }
+// (2アカウント) the list of one account alone (what a read of that account compares with / keeps a closed section's Bots from)
+const part = (g, acct, def) => ({ ...g, bots: (Array.isArray(own(g, 'bots')) ? g.bots : []).filter(b => AC.of(isObj(b) ? b.acct : undefined, def) === acct) });
 // favorites that are a listed Bot's URL become its pin (no Bot shown twice): -> { grok, keep: the other favorites (same objects), moved }
 function absorbFavs(g, favorites) {
   let gg = g, moved = 0;
@@ -133,9 +142,10 @@ function rename(g, id, value) {                               // empty / the pag
 const nameOf = (g, b) => (Object.hasOwn(g.aliases, b.id) && g.aliases[b.id]) || b.name;
 // the bar: pins (in their order) and the sections in the page's order
 function view(g) {
-  const item = b => ({ id: b.id, name: nameOf(g, b), orig: b.name, url: b.url, group: b.isGroup, icon: b.icon, pinned: g.pins.includes(b.id) });
+  const item = b => ({ id: b.id, name: nameOf(g, b), orig: b.name, url: b.url, group: b.isGroup, icon: b.icon, pinned: g.pins.includes(b.id), ...(b.acct ? { acct: b.acct } : {}) });
   const byId = new Map(g.bots.map(b => [b.id, b])), sections = [];
-  for (const b of g.bots) { let s = sections[sections.length - 1]; if (!s || s.name !== b.section) sections.push(s = { name: b.section, items: [] }); s.items.push(item(b)); }
+  let last;                                                   // (2アカウント) a section never runs on into the other account's list
+  for (const b of g.bots) { let s = sections[sections.length - 1]; if (!s || s.name !== b.section || last !== b.acct) sections.push(s = { name: b.section, items: [] }); last = b.acct; s.items.push(item(b)); }
   return { pins: g.pins.map(id => byId.get(id)).filter(Boolean).map(item), sections, count: g.bots.length, at: g.at };
 }
 const note = (code, m) => code === 'OK' ? `Bot ${m.grok.bots.length}件を読み込みました${m.added || m.removed ? `（+${m.added} −${m.removed}）` : ''}` : NOTE[code] || NOTE.ERROR;
@@ -340,5 +350,5 @@ return {ok:ls()===O,fixed};})()`; };
 const touched = rs => rs.orig !== undefined && (rs.opened === true || rs.more > 0);   // anything to undo
 
 module.exports = { HOME, TIMEOUT_MS, MAX_BOTS, NAME_MAX, SEC_MAX, ICON_MAX, ICON_PX, MORE_MAX, WORLD, CODES, NOTE,
-  empty, clean, valid, parse, withIcons, merge, absorbFavs, addUrl, pin, movePin, rename, nameOf, view, note, botId, icon, okId,
+  empty, clean, valid, parse, withIcons, merge, part, absorbFavs, addUrl, pin, movePin, rename, nameOf, view, note, botId, icon, okId,
   migration, navOk, start, decide, scanSidebar, findToggle, inPage, STATE_JS, CLICK_JS, ICONS_JS, RESTORE_JS, touched };

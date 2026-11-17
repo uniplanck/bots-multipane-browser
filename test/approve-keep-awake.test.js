@@ -139,6 +139,7 @@ const toggleCode = segment(main, 'function toggleApproveKeepAwake() {', '// ----
     const ctx = { settings, APPROVE_KEEP_MS: delay, approve: null, approveOpen: false, approveTimer: null, approvePane: null,
       setTimeout: time.setTimeout, clearTimeout: time.clearTimeout, WebContentsView: FakeView,
       AS: { normalizeUrl: v => v }, nativeTheme: { shouldUseDarkColors: false }, ctx: {}, dlog() {},
+      AC: require('../src/accounts'), defAcct: () => 'account1', approveAcct: () => 'account1', acctPref: () => ({}),   // (2アカウント) one login here
       rememberKeyboard() {}, regWc() {}, unregWc() {}, guardNavigation() {}, linkOpen() {},
       loadInto: () => { loads++; }, approveEffective: () => ({ url: 'fixture' }), approveRect: () => ({}),
       GROK_BOT_RE: /^$/, closeOverlay() {}, openOverlay() {}, openApproveInline() {}, overlayOpen: false,

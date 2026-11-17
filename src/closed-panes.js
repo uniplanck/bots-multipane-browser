@@ -7,7 +7,7 @@
 // Reopening reads the newest entry (peek) and takes it off only once the pane exists: a full window (MAX panes), a reopen already running or a
 // pane that could not be made leave the history as it was.
 const LIMIT = 10;                // the newest LIMIT closed panes
-const SPEC_KEYS = ['url', 'name', 'color', 'muted', 'zoom', 'zoomIndiv', 'reloadMinutes', 'sleep'];
+const SPEC_KEYS = ['url', 'name', 'color', 'muted', 'zoom', 'zoomIndiv', 'reloadMinutes', 'sleep', 'acct'];   // acct: (2アカウント) the account it was open in
 // how a reopen ended (diagnostics 'reopen'): reopened / nothing closed / MAX panes open / one already running / the pane could not be made
 const CODES = ['OK', 'EMPTY', 'FULL', 'BUSY', 'FAIL'];
 

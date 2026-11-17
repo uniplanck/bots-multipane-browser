@@ -75,6 +75,13 @@ assert(SC.validate({ ...SC.emptyDoc(), settings: { approveUrl: 'invalid' } }).le
 assert(SC.validate({ ...SC.emptyDoc(), settings: { approveUrl: `${bot}/`, approveLabel: 'x'.repeat(21) } }).length === 2);
 assert(!Object.hasOwn(DG.safeEnv({ settings: { approveUrl: bot, approveLabel: 'Private name' } }).settings, 'approveUrl'));
 assert(!Object.hasOwn(DG.safeEnv({ settings: { approveUrl: bot, approveLabel: 'Private name' } }).settings, 'approveLabel'));
+// (2アカウント) settings.approveAcct: a known account is kept as it is, an unknown one dropped as a repair (= the default login, as before)
+migrated = SC.migrate({ settings: { approveUrl: bot, approveAcct: 'account2' } });
+assert(migrated.ok); assert.strictEqual(migrated.doc.settings.approveAcct, 'account2'); assert.deepStrictEqual(SC.validate(migrated.doc), []);
+migrated = SC.migrate({ settings: { approveUrl: bot, approveAcct: 'someone' } });
+assert(migrated.ok); assert(!Object.hasOwn(migrated.doc.settings, 'approveAcct')); assert.deepStrictEqual(SC.validate(migrated.doc), []);
+assert.strictEqual(SC.validate({ ...SC.emptyDoc(), settings: { approveAcct: 'someone' } }).length, 1);
+assert(!Object.hasOwn(DG.safeEnv({ settings: { approveAcct: 'account2' } }).settings, 'approveAcct'));
 
 const sender = role => ({ role, frame: { top: true, detached: false, url: role === 'overlay' ? pathToFileURL(path.join(root, 'src/overlay.html')).href : role === 'chrome' ? pathToFileURL(path.join(root, 'src/index.html')).href : bot, origin: role === 'overlay' || role === 'chrome' ? 'file://' : 'https://grok.com' } });
 const check = (role, action) => IPC.check('overlay-run', sender(role), [action], { owned: true });
@@ -113,6 +120,7 @@ const changeCode = segment(main, 'function approveChanged() {', 'function hideAp
 const destroyCode = segment(main, 'function destroyApprove() {', 'function openApprove(rect) {');
 {
   const events = [], settings = {}, ctx = { AS, settings, DEFAULT_APPROVE_LABEL: 'Example Bot', save: () => events.push('save'),
+    AC: require('../src/accounts'), defAcct: () => 'account1',
     ctxs: [{ approveChanged: () => events.push('window1') }, { approveChanged: () => events.push('window2') }], broadcast: () => events.push('broadcast') };
   const code = segment(main, 'function setApproveSettings(value) {', '// ---- links opened from page content');
   vm.runInNewContext(`${code}\nsetApproveSettings({url:'${bot}/?q=x',label:'  名前  '});`, ctx);
@@ -125,6 +133,53 @@ const destroyCode = segment(main, 'function destroyApprove() {', 'function openA
   assert.deepStrictEqual(events.slice(4), ['save', 'window1', 'window2', 'broadcast']);
   vm.runInNewContext('setApproveSettings(null)', ctx);
   assert.deepStrictEqual(settings, {});
+  // (2アカウント) the Bot's account is saved with it like a pane's acct: only when it is not the default session's; 既定に戻す forgets it
+  vm.runInNewContext(`setApproveSettings({url:'${bot}',label:'B',acct:'account2'})`, ctx);
+  assert.deepStrictEqual(settings, { approveUrl: bot, approveLabel: 'B', approveAcct: 'account2' });
+  vm.runInNewContext(`setApproveSettings({url:'${bot}',label:'A',acct:'account1'})`, ctx);
+  assert.deepStrictEqual(settings, { approveUrl: bot, approveLabel: 'A' });
+  vm.runInNewContext(`setApproveSettings({url:'${bot}',label:'B',acct:'account2'})`, ctx); vm.runInNewContext(`setApproveSettings({url:'${bot}',label:'?',acct:'someone'})`, ctx);
+  assert.deepStrictEqual(settings, { approveUrl: bot, approveLabel: '?' });
+  vm.runInNewContext(`setApproveSettings({url:'${bot}',label:'B',acct:'account2'})`, ctx); vm.runInNewContext('setApproveSettings(null)', ctx);
+  assert.deepStrictEqual(settings, {});
+}
+// (2アカウント) the account of a Bot typed / picked for the button: the Grok bar's, else a favorite's / an open pane's, else the current one for the same Bot
+{
+  const AC = require('../src/accounts'), GB = require('../src/grok-bots');
+  const yBar = 'https://grok.com/bot/ybar', nBar = 'https://grok.com/bot/nbar', yFav = 'https://grok.com/bot/yfav', yPane = 'https://grok.com/bot/ypane';
+  const ctx = { AS, AC, GB, defAcct: () => 'account1', approveEffective: () => ({ url: bot }), approveAcct: () => 'account2', paneUrl: p => p.url,
+    grok: { bots: [{ id: 'ybar', url: yBar, acct: 'account2' }, { id: 'nbar', url: nBar }] }, favorites: [{ url: yFav, acct: 'account2' }, { url: nBar, acct: 'account2' }],
+    ctxs: [{ panes: [] }, { panes: [{ url: yPane, acct: 'account2' }, { url: other, acct: 'account1' }] }] };
+  vm.runInNewContext(segment(main, 'function approveAcctOf(url) {', 'function toggleApproveKeepAwake() {'), ctx);
+  assert.strictEqual(ctx.approveAcctOf(`${yBar}/?from=x`), 'account2');
+  assert.strictEqual(ctx.approveAcctOf(nBar), 'account1', 'the Grok bar wins over a favorite');
+  assert.strictEqual(ctx.approveAcctOf(yFav), 'account2'); assert.strictEqual(ctx.approveAcctOf(yPane), 'account2'); assert.strictEqual(ctx.approveAcctOf(other), 'account1');
+  assert.strictEqual(ctx.approveAcctOf(bot), 'account2', 'the Bot the button opens now keeps its account (a new name only)');
+  for (const url of ['https://grok.com/bot/unknown', '', 'https://evil.com/bot/x']) assert.strictEqual(ctx.approveAcctOf(url), 'account1', url);
+}
+// (2アカウント) the popup's view is made in its Bot's login; a hidden one kept in another login (いまのログイン changed) is made again
+{
+  const AC = require('../src/accounts'), made = [], closed = [];
+  class FakeView {
+    constructor(opts) { made.push(opts.webPreferences); let gone = false;
+      this.webContents = { isDestroyed: () => gone, isCrashed: () => false, close: () => { gone = true; closed.push(made.length); }, setWindowOpenHandler() {}, on() {}, focus() {} }; }
+    setBorderRadius() {} setBackgroundColor() {} setVisible() {} setBounds() {}
+  }
+  const ctx = { AS, AC, WebContentsView: FakeView, acct: 'account2', def: 'account1', approve: null, approveOpen: false, approveTimer: null, approvePane: null,
+    approveAcct: () => ctx.acct, defAcct: () => ctx.def, acctPref: a => (AC.partition(a, ctx.def) ? { session: `ses:${AC.partition(a, ctx.def)}` } : {}),
+    approveEffective: () => ({ url: bot }), approveRect: () => ({}), clearTimeout() {}, dlog() {}, overlayOpen: false, closeOverlay() {}, openOverlay() {}, openApproveInline() {},
+    nativeTheme: { shouldUseDarkColors: false }, ctx: {}, rememberKeyboard() {}, regWc() {}, unregWc() {}, guardNavigation() {}, linkOpen() {}, loadInto() {},
+    GROK_BOT_RE: /^$/, win: { contentView: { addChildView() {}, removeChildView() {} } } };
+  vm.runInNewContext(segment(main, 'function ensureApprove(url) {', 'function openApproveSettings() {'), ctx);
+  ctx.openApprove();
+  assert.strictEqual(made.length, 1); assert.strictEqual(made[0].session, 'ses:persist:acct-account2'); assert.strictEqual(ctx.approvePane.part, 'persist:acct-account2');
+  assert(made[0].contextIsolation === true && made[0].sandbox === true && made[0].nodeIntegration === false && !('preload' in made[0]));
+  ctx.approveOpen = false; ctx.openApprove();
+  assert.strictEqual(made.length, 1, 'the hidden copy in the same login is reused');
+  ctx.approveOpen = false; ctx.def = 'account2'; ctx.openApprove();
+  assert.strictEqual(made.length, 2); assert.deepStrictEqual(closed, [1]); assert(!('session' in made[1])); assert.strictEqual(ctx.approvePane.part, '');
+  ctx.approveOpen = false; ctx.acct = 'account1'; ctx.def = 'account1'; ctx.openApprove();
+  assert.strictEqual(made.length, 2, 'the default session either way: nothing made again');
 }
 {
   const events = [], ctx = { anchor, dlog() {}, approveOpen: false, approveEffective: () => ({ url: '' }), openApproveInline: r => events.push(r),
@@ -187,12 +242,12 @@ assert.deepStrictEqual(exerciseChange(true, ''), ['visible:false', 'destroy', 'c
 {
   const cases = segment(main, "    case 'approve-save':", "    case 'ws-overwrite':");
   for (const [overlayOpen, overlayMode, allowed] of [[true, 'approve-inline', true], [true, 'approve-settings', true], [true, 'palette', false], [false, 'approve-inline', false]]) {
-    const events = [], ctx = { AS, overlayOpen, overlayMode, knownApproveBots: () => [], overlay: { webContents: { send() {} } },
+    const events = [], ctx = { AS, overlayOpen, overlayMode, knownApproveBots: () => [], overlay: { webContents: { send() {} } }, approveAcctOf: u => `acct-of:${u}`,
       setApproveSettings: v => { events.push(v); return true; }, closeOverlay: () => events.push('close') };
     vm.runInNewContext(`function act(a) { switch (a.type) { ${cases} } }`, ctx);
     ctx.act({ type: 'approve-save', url: '', label: '' });
     assert.strictEqual(events.length, allowed ? 2 : 0);
-    if (allowed) { assert.strictEqual(events[0].url, ''); assert.strictEqual(events[0].label, ''); }
+    if (allowed) { assert.strictEqual(events[0].url, ''); assert.strictEqual(events[0].label, ''); assert.strictEqual(events[0].acct, 'acct-of:'); }
     events.length = 0; ctx.act({ type: 'approve-reset' });
     assert.deepStrictEqual(events, allowed ? [null, 'close'] : []);
   }
@@ -203,11 +258,11 @@ assert.deepStrictEqual(exerciseChange(true, ''), ['visible:false', 'destroy', 'c
 {
   const cases = segment(main, "    case 'approve-pick':", "    case 'approve-reset':");
   const events = [], known = [{ id: 'abc-XYZ_123', url: bot, name: '正しい名前' }];
-  const ctx = { AS, overlayOpen: true, overlayMode: 'approve-inline', knownApproveBots: () => known,
+  const ctx = { AS, overlayOpen: true, overlayMode: 'approve-inline', knownApproveBots: () => known, approveAcctOf: u => (u === bot ? 'account2' : 'account1'),
     setApproveSettings: v => { events.push(['save', v]); return true; }, overlay: { webContents: { send: (...v) => events.push(v) } } };
   vm.runInNewContext(`function pick(a) { switch (a.type) { ${cases} } }`, ctx);
   ctx.pick({ type: 'approve-pick', id: 'abc-XYZ_123' });
-  assert.strictEqual(events.length, 2); assert.strictEqual(events[0][1].url, bot); assert.strictEqual(events[0][1].label, '正しい名前');
+  assert.strictEqual(events.length, 2); assert.strictEqual(events[0][1].url, bot); assert.strictEqual(events[0][1].label, '正しい名前'); assert.strictEqual(events[0][1].acct, 'account2');
   assert.strictEqual(events[1][0], 'approve-picked');
   events.length = 0;
   for (const id of ['unknown', '../abc-XYZ_123', 'abc-XYZ_123/x']) ctx.pick({ type: 'approve-pick', id });
@@ -237,11 +292,28 @@ assert(DEF_URL_RE.test(main) && DEF_LABEL_RE.test(main));
   const shipUrl = main.match(DEF_URL_RE)[0].split("'")[1], shipLabel = main.match(DEF_LABEL_RE)[0].split("'")[1];
   assert.strictEqual(owner.url, shipUrl); assert.strictEqual(owner.label, shipLabel); assert.strictEqual(owner.source, shipUrl ? 'default' : 'unset');
 }
+// (2アカウント) the login the popup opens in (approveAcct): the built-in Bot's own account (a real account id), a saved Bot's saved account
+// (none = the default login, as every file before), the environment's / none: the default login
+{
+  const AC = require('../src/accounts'), DEF_ACCT_RE = /const DEFAULT_APPROVE_ACCT = '([^'\n]*)';/;
+  assert(DEF_ACCT_RE.test(main));
+  const defs = segment(main, "const DEFAULT_APPROVE_URL = '", 'function setApproveSettings(value) {'), blank = defs.replace(DEF_URL_RE, "const DEFAULT_APPROVE_URL = ''; ");
+  const acctFor = (settings, env = {}, def = 'account1', code = defs) => vm.runInNewContext(`${code}\napproveAcct()`, { require: () => AS, settings, process: { env }, AC, defAcct: () => def });
+  const shipUrl = main.match(DEF_URL_RE)[0].split("'")[1], shipAcct = main.match(DEF_ACCT_RE)[1];
+  if (shipUrl) assert(AC.isAcct(shipAcct), 'the built-in Bot names a real account');
+  assert.strictEqual(acctFor({}), shipUrl ? shipAcct : 'account1'); assert.strictEqual(acctFor({}, {}, 'account2'), shipUrl ? shipAcct : 'account2');
+  assert.strictEqual(acctFor({}, {}, 'account1', blank), 'account1');
+  assert.strictEqual(acctFor({ approveUrl: bot }), 'account1'); assert.strictEqual(acctFor({ approveUrl: bot }, {}, 'account2'), 'account2');
+  assert.strictEqual(acctFor({ approveUrl: bot, approveAcct: 'account2' }), 'account2'); assert.strictEqual(acctFor({ approveUrl: bot, approveAcct: 'account1' }, {}, 'account2'), 'account1');
+  assert.strictEqual(acctFor({ approveUrl: bot, approveAcct: 'someone' }), 'account1');
+  assert.strictEqual(acctFor({}, { MULTIPANE_APPROVE_URL: other }), 'account1'); assert.strictEqual(acctFor({}, { MULTIPANE_APPROVE_URL: other }, 'account2'), 'account2');
+}
 assert(!main.includes('APPROVE_URL.match(GROK_BOT_RE)[1]'));
 assert(main.includes("guardNavigation(wc, 'approve')") && main.includes('ctxs.forEach(c => c.approveChanged())') && main.includes('broadcast();'));
 assert(main.includes("wcReg.get(wc.id)?.role === 'approve' && !AS.grokPage(url)") && main.includes("kind === 'approve' && !AS.grokPage(url)") && main.includes("'approve redirect'"));
 assert(main.includes("label: '右上ボタンのBotを設定…'") && main.includes("label: 'このBotを右上ボタンにする'"));
 assert.strictEqual((main.match(/approvePaneItem\(p\),/g) || []).length, 2);
+assert(main.includes('setApproveSettings({ url, label, acct: p.acct })'), "(2アカウント) このBotを右上ボタンにする: the pane's account");
 assert(main.includes("case 'approve-open': closeOverlay(); openApprove();") && main.includes("on('approve-open', rect => openApprove(rect))"));
 assert(overlay.includes("S.approve.label || '右上ボタンのBot'") && overlay.includes('右上ボタンのBotを設定（未設定）'));
 assert(renderer.includes("setTip($('#approve-btn'), name") && read('src/index.html').includes('id="approve-label" hidden'));

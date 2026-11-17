@@ -13,3 +13,4 @@ panes.json
 *.state.json
 favorites.backup-*.json
 screenshots/
+.xg/

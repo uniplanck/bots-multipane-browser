@@ -2,6 +2,7 @@
 // Synthetic URLs and pane entities only. No Electron process, user profile, real DOM or draft-preservation claim.
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const GB = require('../src/grok-bots');
+const AC = require('../src/accounts');
 const main = fs.readFileSync(path.join(__dirname, '..', 'src/main.js'), 'utf8');
 let bad = 0; const t = (n, ok) => { if (!ok) bad++; console.log(ok ? 'ok  ' : 'FAIL', n); };
 const J = JSON.stringify;
@@ -14,10 +15,12 @@ function source(name) {
 const code = ['newPane', 'openIn', 'openFavorite', 'openGrokBot', 'gbotMenu'].map(source).join('\n');
 const b = { id: 'fixture', url: 'https://grok.com/bot/fixture', name: 'Fixture group', group: true };
 function setup(n = 1, opt = {}) {
-  const box = { adds: [], navs: [], guards: [], focus: [], layouts: [], windows: [], timers: [], copies: [], overlays: [], pushes: 0, changes: 0, allow: true, template: null, added: null };
-  const pane = id => ({ id, url: 'https://grok.com/bot/existing', name: '', view: { webContents: { isDestroyed: () => false, focus: () => box.focus.push(id) } } });
+  const box = { adds: [], navs: [], guards: [], focus: [], layouts: [], windows: [], timers: [], copies: [], overlays: [], swaps: [], pushes: 0, changes: 0, allow: true, template: null, added: null };
+  const pane = id => ({ id, url: 'https://grok.com/bot/existing', name: '', acct: 'account1', view: { webContents: { isDestroyed: () => false, focus: () => box.focus.push(id) } } });
   const ctx = vm.createContext({ MAX: 10, panes: Array.from({ length: n }, (_, i) => pane(i + 1)), focused: 0, maximizedId: n ? 1 : null,
-    favorites: [], grok: { ...GB.empty(), bots: [b], pins: opt.pinned ? [b.id] : [] }, GB, isMac: true, win: {}, NEWTAB: 'mpb:newtab',
+    favorites: [], grok: { ...GB.empty(), bots: [opt.acct ? { ...b, acct: opt.acct } : b], pins: opt.pinned ? [b.id] : [] }, GB, isMac: true,
+    AC, defAcct: () => 'account1', acctSave: a => (AC.saved(a, 'account1') ? { acct: a } : {}), save() {},   // (2アカウント) the default login is account1's
+    askAcct: (p, acct, over, then) => { box.swaps.push({ p, acct, over }); const q = { ...p, ...over, acct }; ctx.panes[ctx.panes.indexOf(p)] = q; if (then) then(q); }, win: {}, NEWTAB: 'mpb:newtab',
     normalize: u => u, paneStart: u => u, onlyPane: p => () => ctx.panes.filter(q => q === p),
     guardRun: (op, targets, run) => { box.guards.push({ op, targets: targets() }); if (box.allow) run(targets()); },
     navTo: (p, url) => { box.navs.push({ p, url }); p.url = url; },
@@ -87,4 +90,18 @@ for (const isGroup of [false, true]) {
   t((isGroup ? 'group' : 'bot') + ' menu: current action navigates the focused pane (not the first), with the exact item URL',
     box.navs.length === 1 && box.navs[0].p === target && box.navs[0].url === b.url && box.guards[0].targets[0] === target && !box.adds.length);
 }
+// ---- 2アカウント: a Bot listed under the other account opens in that account's login ----
+{ const { box, ctx, open } = setup(2); open();
+  t('acct: a Bot of the default login -> a new pane in that login (account1), as before', box.adds.length === 1 && box.adds[0].acct === 'account1' && !box.swaps.length); }
+{ const { box, ctx, open } = setup(2, { acct: 'account2' }); open();
+  t('acct: a account2 Bot -> its new pane is made in account2\'s login, whatever pane is focused', box.adds.length === 1 && box.adds[0].acct === 'account2' && box.adds[0].url === b.url && !box.swaps.length); }
+{ const { box, ctx, open } = setup(2, { acct: 'account2' }), p = ctx.panes[0]; open('here');
+  t('acct: a account2 Bot into a account1 pane -> that pane changes account (made again in account2\'s login with the Bot), never loaded in the wrong login',
+    !box.navs.length && !box.adds.length && box.swaps.length === 1 && box.swaps[0].p === p && box.swaps[0].acct === 'account2' && box.swaps[0].over.url === b.url && ctx.panes[0].name === b.name); }
+{ const { box, ctx, open } = setup(2, { acct: 'account2' }); ctx.panes[0].acct = 'account2'; open('here');
+  t('acct: a account2 Bot into a account2 pane -> the guarded navigation as before', box.navs.length === 1 && !box.swaps.length && box.guards[0].op === 'NAVIGATE'); }
+{ const { box, open } = setup(1, { acct: 'account2' }); open('window');
+  t('acct: 別ウィンドウ keeps the account in the new window\'s pane spec', J(box.windows) === J([{ layout: '2x2', panes: [{ url: b.url, name: b.name, acct: 'account2' }] }])); }
+{ const { box, ctx, open } = setup(10, { acct: 'account2' }), p = ctx.panes[0]; open();
+  t('acct: MAX panes -> the focused pane takes the Bot in its account (changed to account2), no extra pane', ctx.panes.length === 10 && !box.adds.length && !box.navs.length && box.swaps.length === 1 && box.swaps[0].p === p && box.swaps[0].over.url === b.url); }
 console.log(bad ? bad + ' failed' : 'all passed'); process.exit(bad ? 1 : 0);
