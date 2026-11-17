@@ -183,13 +183,13 @@ function wiring() {
   t('main: its first page -> NEWP.nav (did-navigate); loaded -> sbOpen when due', /wc\.on\('did-navigate', \(e, u\) => \{ if \(p\.sb\) p\.sb = NEWP\.nav\(p\.sb, u, Date\.now\(\)\); \}\);/.test(add) && /onGrokLoad\(p\);\s*\n\s*if \(NEWP\.due\(p\.sb\)\) sbOpen\(p\);/.test(add));
   const empties = [...main.matchAll(/addPane\(\{ url: '' \}(?:, (\{[^}]*\}))?\)/g)];
   t(`main: every empty addPane (${empties.length}: preset / last pane closed / empty workspace / empty window) is 'fill'`, empties.length === 4 && empties.every(m => /from: 'fill'/.test(m[1] || '')));
-  t('main: ＋ / ⌘T / palette go through newPane -> addPane from \'new\'; at 10 panes the focused pane as before (no new pane)', /addPane\(\{ url \}, \{ from: 'new' \}\)/.test(fnSrc('newPane'))
+  t('main: ＋ / ⌘T / palette go through newPane -> addPane from \'new\'; at 10 panes the focused pane as before (no new pane)', /addPane\(\{ url, acct \}, \{ from: 'new' \}\)/.test(fnSrc('newPane'))   // (2アカウント) + the account it opens in
     && /if \(panes\.length >= MAX\) \{ const p = panes\[focused\]; if \(p\) openIn\(p, url\); return; \}/.test(fnSrc('newPane')) && /on\('add', \(\) => newPane\(''\)\)/.test(main)
     && /acc\('CmdOrCtrl\+T', \(\) => cur\(\)\?\.newPane\(''\)/.test(main) && /if \(k === 't'\) \{ closeOverlay\(\); newPane\(''\); return true; \}/.test(main) && /case 'open-new': closeOverlay\(\); newPane\(/.test(main));
   t('main: ⌘N / palette 新しいウィンドウ without a URL -> a window with no pane -> its empty pane', /accelerator: 'CmdOrCtrl\+N', click: \(\) => makeWindow\(\{ layout: '2x2', panes: \[\] \}\)/.test(main)
     && /case 'new-window': closeOverlay\(\); makeWindow\(\{ layout: '2x2', panes: a\.url \? \[\{ url: String\(a\.url\) \}\] : \[\] \}\);/.test(main)
     && /specs\.slice\(0, MAX\)\.forEach\(s => addPane\(s, \{ focus: false, defer: true, asleep: restore \? restorePlan\(s\) : null \}\)\);[^\n]*\n\s*if \(!panes\.length\) addPane\(\{ url: '' \}, \{ focus: false, defer: true, from: 'fill' \}\);/.test(main));
-  const other = [...main.matchAll(/addPane\((?!\{ url: '' \})[^\n]*/g)].map(m => m[0]).filter(s => !/^addPane\(\{ url \}, \{ from: 'new' \}\)/.test(s) && !/^addPane\(spec = \{\}/.test(s));
+  const other = [...main.matchAll(/addPane\((?!\{ url: '' \})[^\n]*/g)].map(m => m[0]).filter(s => !/^addPane\(\{ url, acct \}, \{ from: 'new' \}\)/.test(s) && !/^addPane\(spec = \{\}/.test(s));
   t(`main: restore / workspace / ⌘⇧T / 複製 / links (${other.length}) carry no from -> as before`, other.length >= 5 && other.every(s => !/from:/.test(s)));
   const gr = fnSrc('grokRefresh', 'async function ');
   t('main: the Grok bar read reads / clicks nothing while an opening holds sidebarOpen (bounded by its own timeout)', /if \(sbLock && Date\.now\(\) - t0 < GB\.TIMEOUT_MS\) continue;[^\n]*\n\s*const o = await gbJs\(wc, GB\.STATE_JS\);/.test(gr));
@@ -206,7 +206,9 @@ function wiring() {
 // newPane itself (vm, side effects stubbed): what reaches addPane
 function newPaneRun() {
   const calls = [], opens = [];
-  const ctx = vm.createContext({ MAX: 10, panes: [], focused: 0, maximizedId: 1, relayout: () => {}, setTimeout: fn => fn(), openIn: (...a) => opens.push(a),
+  const swaps = [];
+  const ctx = vm.createContext({ grok: { bots: [{ id: 'ybot', acct: 'account2' }] }, GB, AC: require('../src/accounts'), defAcct: () => 'account1', askAcct: (...a) => swaps.push(a),   // (2アカウント)
+    MAX: 10, panes: [], focused: 0, maximizedId: 1, relayout: () => {}, setTimeout: fn => fn(), openIn: (...a) => opens.push(a),
     addPane: (spec, opt) => { calls.push([spec, opt]); const p = { id: calls.length, view: { webContents: { isDestroyed: () => false, focus: () => {} } } }; ctx.panes.push(p); return p; } });
   vm.runInContext(fnSrc('newPane'), ctx);
   ctx.newPane(''); ctx.newPane('https://grok.com/bot/abc');
@@ -214,6 +216,15 @@ function newPaneRun() {
     && J(calls.map(([s, o]) => NEWP.start(s.url, o.from))) === J([{ url: HOME, sidebar: true }, { url: 'https://grok.com/bot/abc', sidebar: false }]));
   while (ctx.panes.length < 10) ctx.panes.push({ id: 100 + ctx.panes.length }); ctx.focused = 3; ctx.newPane('');
   t('newPane at 10 panes: no new pane (the focused one, as before)', calls.length === 2 && opens.length === 1 && opens[0][1] === '');
+  // (2アカウント) which login a new pane opens in
+  ctx.panes.length = 0; calls.length = 0; ctx.focused = 0;
+  ctx.newPane('', 'account2'); ctx.panes[0].acct = 'account2'; ctx.focused = 0; ctx.newPane(''); ctx.newPane('https://grok.com/bot/ybot'); ctx.newPane('https://grok.com/bot/abc', 'account1');
+  t('newPane: the chosen account reaches addPane; none = the focused pane\'s; a listed Bot\'s URL = the account it is listed under',
+    J(calls.map(c => c[0].acct)) === J(['account2', 'account2', 'account2', 'account1']) && calls.every(c => c[1].from === 'new'));
+  while (ctx.panes.length < 10) ctx.panes.push({ id: 100 + ctx.panes.length, acct: 'account1' }); ctx.focused = 5; opens.length = 0; calls.length = 0;
+  ctx.newPane('https://grok.com/bot/ybot'); ctx.newPane('', 'account1');
+  t('newPane at 10 panes, another account\'s: the focused pane changes account (askAcct, through the guard), the same account: opened in it as before',
+    !calls.length && swaps.length === 1 && swaps[0][0] === ctx.panes[5] && swaps[0][1] === 'account2' && swaps[0][2].url === 'https://grok.com/bot/ybot' && opens.length === 1 && opens[0][0] === ctx.panes[5]);
 }
 
 // ---- codes / worlds ----

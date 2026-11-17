@@ -135,12 +135,12 @@ t('source: collapsed status dots only occupy space when their state is present',
     }
   }
   favs = new El('div'); favs.w = 150;
-  const elements = { '#favs': favs, '#fav-star': new El('button'), '#gbar-note': new El('span'), '#fav-hint': new El('span') };
+  const elements = { '#favs': favs, '#favs-y': new El('div'), '#fav-star': new El('button'), '#gbar-note': new El('span'), '#fav-hint': new El('span') };
   const bot = id => ({ id, name: id, orig: id, url: 'https://grok.com/bot/' + id, icon: '', group: false, pinned: false });
   const sections = [{ name: '待機', items: [bot('w1'), bot('w2'), bot('w3')] },
     { name: 'Dev tools', items: Array.from({ length: 5 }, (_, i) => bot('d' + i)) }, { name: '', items: [bot('misc')] }];
   const box = { calls: [], saves: 0, pushes: 0, gbar: null };
-  const model = vm.createContext({ GS, GM: Mode, GB: { view: () => ({ sections, pins: [], count: 9, at: 0 }) },
+  const model = vm.createContext({ AC: require('../src/accounts'), GS, GM: Mode, GB: { view: () => ({ sections, pins: [], count: 9, at: 0 }) },
     grok: {}, settings: {}, gbRun: false, gbNote: '', save: () => box.saves++, gbPush: () => { box.pushes++; if (box.gbar) box.gbar(model.gbView()); } });
   vm.runInContext(main.match(/const gbView = \(\) => [^\n]*;/)[0].replace('const gbView', 'var gbView') + '\n' + main.match(/function gbSecToggle\(name\) \{[^\n]*\}/)[0], model);
   const mpb = new Proxy({}, { get: (_, key) => key === 'onGbar' ? cb => { box.gbar = cb; } : (...args) => {
@@ -150,14 +150,14 @@ t('source: collapsed status dots only occupy space when their state is present',
   const ctx = vm.createContext({ $: s => elements[s], mpb, S: { favorites: [], focusedId: 11, panes: [
     { id: 11, url: sections[0].items[0].url }, { id: 12, url: sections[0].items[1].url, needsReply: true },
     { id: 13, url: sections[1].items[0].url }] }, MOD: '⌘', renderSummaryTips() {}, URL,
-    GbarPresence: Presence, GbarMode: Mode, GbarPages: Pages, GbarLongPress: require('../src/gbar-long-press'), setTimeout: () => 0, clearTimeout() {},
+    GbarPresence: Presence, GbarMode: Mode, GbarPages: Pages, GbarRows: require('../src/gbar-rows'), GbarLongPress: require('../src/gbar-long-press'), setTimeout: () => 0, clearTimeout() {},
     document: doc,
     getComputedStyle: e => e === favs ? { columnGap: '4px' } : { marginLeft: e.classList.contains('gsep') ? '4px' : '0', marginRight: e.classList.contains('gsep') ? '4px' : '0' },
     ResizeObserver: class { constructor(cb) { box.resize = cb; } observe() {} } });
   vm.runInContext(ren.slice(ren.indexOf('function setTip('), ren.indexOf('function tipAttrs('))
     + ren.slice(ren.indexOf('// ---- short labels:'), ren.indexOf('function mk(id) {'))
     + ren.slice(ren.indexOf('// ---- お気に入りバー:'), ren.indexOf('// drop a link / URL text onto the favorites bar')), ctx);
-  const run = code => vm.runInContext(code, ctx), gp = () => run('GP'), next = run('gNext');
+  const run = code => vm.runInContext(code, ctx), gp = () => run('gLanes[0].GP'), next = run('gLanes[0].next');   // the N row (every Bot here is N's)
   const collapsed = () => gp().els.find(e => e.classList.contains('gcollapsed'));
   const event = (o = {}) => ({ button: 0, stopPropagation() { this.stopped = true; }, preventDefault() { this.prevented = true; }, ...o });
   const show = el => { for (let i = 0; i < gp().pages.length && !favs.contains(el); i++) next.onclick(); return favs.contains(el); };

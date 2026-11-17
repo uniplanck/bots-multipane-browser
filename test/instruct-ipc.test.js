@@ -32,7 +32,7 @@ t('instruct batch: empty / too many / other keys / answer keys in a row / not st
   [{ tasks: [NA], text: 'x' }], [{ tasks: [NA], bot: 'Bot' }], [{ tasks: [NA], url: HOOK }], [{ tasks: [{ ...NA, mode: 'answer' }] }], [{ tasks: [{ ...NA, options: ['a'] }] }], [{ tasks: [{ ...NA, url: HOOK }] }],
   [{ tasks: [{ ...NA, tid: 5 }] }], [{ tasks: [{ task: 'x' }] }], [{ tasks: [{ ...NA, memo: 'x'.repeat(SI.RAW_MAX + 1) }] }], [{ tasks: NA }], [{ tasks: [[NA]] }], [{ tasks: [null] }], [{ tasks: ['N_1'] }],
   [{ ...NA, tasks: [NA] }], [{ tasks: [NA] }, { tasks: [NB] }]].every(a => chk(INS, SIDE, a) === 'E_PAYLOAD'));
-t('instruct batch: mixed Bots pass the shape but main refuses them (SI.batch -> null -> \'bad\')', chk(INS, SIDE, [{ tasks: [NA, { ...NB, bot: 'Kimiマン' }] }]) === null && SI.batch({ tasks: [NA, { ...NB, bot: 'Kimiマン' }] }) === null);
+t('instruct batch: mixed Bots pass the shape but main refuses them (SI.batch -> null -> \'bad\')', chk(INS, SIDE, [{ tasks: [NA, { ...NB, bot: '別のBot' }] }]) === null && SI.batch({ tasks: [NA, { ...NB, bot: '別のBot' }] }) === null);
 t('instruct batch: only the sidebar may send it', ['chrome', 'overlay', 'pane', 'probe', 'approve'].every(r => chk(INS, { role: r, origin: ORIGIN, frame: SIDE.frame }, [{ tasks: [NA] }]) === 'E_ROLE'));
 t('instruct: the sidebar\'s sender checks (origin, top frame, its window)', chk(INS, as(SIDE, { url: 'https://evil.example/', origin: 'https://evil.example' }), [ROW]) === 'E_PAGE'
   && chk(INS, as(SIDE, {}, { origin: undefined }), [ROW]) === 'E_PAGE' && chk(INS, as(SIDE, { top: false }), [ROW]) === 'E_FRAME' && chk(INS, as(SIDE, { detached: true }), [ROW]) === 'E_FRAME'
@@ -87,7 +87,7 @@ const tests = [];
     && sent[0][2] === 'invoke' && J(sent[0][1]) === J([{ tasks: [NA, NB] }]) && chk(INS, SIDE, sent[0][1]) === null);
   tests.push(pb.then(v => t('preload: a batch resolves { result } from main', J(v) === J({ result: 'open' }))));
   sent.length = 0;
-  const bb = [api.instruct({ tasks: [] }), api.instruct({ tasks: Array(SI.BATCH_MAX + 1).fill(NA) }), api.instruct({ tasks: [NA, { ...NB, bot: 'Kimiマン' }] }), api.instruct({ tasks: [NA, { tid: 'N_3' }] }),
+  const bb = [api.instruct({ tasks: [] }), api.instruct({ tasks: Array(SI.BATCH_MAX + 1).fill(NA) }), api.instruct({ tasks: [NA, { ...NB, bot: '別のBot' }] }), api.instruct({ tasks: [NA, { tid: 'N_3' }] }),
     api.instruct({ tasks: [NA, { tid: ' ' }] }), api.instruct({ tasks: [NA, { tid: 'N_3', bot: 'Bot', task: 5 }] }), api.instruct({ tasks: [NA, null] }), api.instruct({ tasks: [{ ...NA, memo: 'x'.repeat(SI.RAW_MAX + 1) }] })];
   t('preload: an empty / too long list, two Bots (a row without bot too), a row with no tid / not strings / too long -> not sent', sent.length === 0);
   tests.push(Promise.all(bb).then(v => t('preload: ...and resolves bad', v.every(x => J(x) === J({ result: 'bad' })))));
@@ -125,8 +125,9 @@ const tests = [];
     && /openOverlay\('instruct', batch \? \{ no, batch, draft, hook: hookView\(\) \} : \{ no, task, draft, hook: hookView\(\) \}\);/.test(open) && /hook: hookView\(\) \}\); \}/.test(fn('openSidebarSettings'))
     && (main.match(/'instruct-hook'/g) || []).length === 2 && (main.match(/overlay\.webContents\.send\('instruct-hook', hookReply\(instructWebhook\.(set\(\{ url: a\.url, key: a\.key \}\)|clear\(\))\)\)/g) || []).length === 2);
   t('main: the webhook save / removal only while the 進捗サイドバー settings screen is open', /case 'instruct-hook-save': if \(overlayOpen && overlayMode === 'sidebar-settings'\)/.test(main) && /case 'instruct-hook-clear': if \(overlayOpen && overlayMode === 'sidebar-settings'\)/.test(main));
+  // botColors is the pane colour map; webhook credentials still must never be stored in settings.
   t('main: stored in its own file in userData through safeStorage (instruct-webhook.js), never in panes.json\'s settings',
-    /IW\.createStore\(\{ file: path\.join\(app\.getPath\('userData'\), 'instruct-webhook\.json'\), safe: safeStorage, fs \}\)/.test(main) && !/settings\.(instruct|hook|webhook|naoai)/i.test(main)
+    /IW\.createStore\(\{ file: path\.join\(app\.getPath\('userData'\), 'instruct-webhook\.json'\), safe: safeStorage, fs \}\)/.test(main) && !/settings\.(instruct|hook|webhook|bot(?!Colors\b))/i.test(main)
     && !/instruct|webhook/i.test(read('state-schema.js') + read('state-store.js')));
   t('main: the scripted setup (instructWebhook.set / status / clear) is on the module export only - the same store as the settings screen, no IPC for it',
     /^if \(typeof module !== 'undefined' && module\.exports\) module\.exports\.instructWebhook = instructWebhook;/m.test(main) && /set: v => \{ const r = hooks\(\)\.set\(v\);/.test(main)

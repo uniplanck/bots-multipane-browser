@@ -132,7 +132,7 @@ t('nothing personal in the rules: no URL but the hosts rule, no UUID, no key', !
 // ---- 一括 (mode batch): the rows selected on the page (one Bot) -> one body ----
 { const id = 'x_' + '2'.repeat(24), now = new Date('2026-11-12T03:00:00.000Z');
   const A = { tid: 'N_1', task: '確認: ロゴ案', bot: 'Bot', state: '待ち', memo: 'm' }, B = { tid: 'N_2', task: '確認: 公開日', bot: 'Bot', state: '待ち', memo: '' }, C = { tid: 'N_3', task: '', bot: 'Bot', state: '作業中' };
-  const X = { tid: 'K_1', task: '別のBot', bot: 'Kimiマン', state: '待ち' };
+  const X = { tid: 'K_1', task: '別のBot', bot: '別のBot', state: '待ち' };
   t('limits: BATCH_MAX 20 rows; titles one per line', R.BATCH_MAX === 20 && R.TITLE_SEP === '\n');
   t('batchOk = the IPC shape: { tasks } only, 1..20 rows of the five fields (strings up to RAW_MAX, a tid)', R.batchOk({ tasks: [A] }) && R.batchOk({ tasks: [A, B, C] }) && R.batchOk({ tasks: Array(20).fill(A) })
     && R.batchOk({ tasks: [A, X] }) && [undefined, null, [], {}, { tasks: [] }, { tasks: Array(21).fill(A) }, { tasks: A }, { tasks: [A], bot: 'Bot' }, { tasks: [A], text: 'x' }, { tasks: [{ ...A, mode: 'answer' }] },
@@ -141,10 +141,10 @@ t('nothing personal in the rules: no URL but the hosts rule, no UUID, no key', !
   let b = R.batch({ tasks: [B, A, { ...B, task: '同じtid' }, { tid: ' \n ', bot: 'Bot' }, C] });
   t('batch: each row cleaned (request()), the page\'s order kept, a tid once, rows with no tid left dropped; bot = theirs', b && b.bot === 'Bot' && J(b.tasks.map(x => x.tid)) === J(['N_2', 'N_1', 'N_3'])
     && J(b.tasks[1]) === J(R.request(A)) && b.tasks[0].task === '確認: 公開日');
-  t('batch: two Bots -> null (never mixed); nothing usable -> null', R.batch({ tasks: [A, X] }) === null && R.batch({ tasks: [A, { ...B, bot: 'Bot ' }, { ...B, tid: 'N_9', bot: 'naoai' }] }) === null
+  t('batch: two Bots -> null (never mixed); nothing usable -> null', R.batch({ tasks: [A, X] }) === null && R.batch({ tasks: [A, { ...B, bot: 'Bot ' }, { ...B, tid: 'N_9', bot: 'bot' }] }) === null
     && R.batch({ tasks: [{ tid: '  ', bot: 'Bot' }] }) === null && R.batch(null) === null && R.batch({ tasks: [A, { ...X, tid: '\n' }] }) !== null);
   t('batch: the same name after cleaning is the same Bot', R.batch({ tasks: [A, { ...B, bot: ' Bot\n' }] }).tasks.length === 2);
-  t('batchKey: one per Bot, never a tid (a cleaned tid has no line break)', R.batchKey('Bot') === 'batch\nBot' && R.batchKey('Bot') !== R.batchKey('Kimiマン') && R.batchKey(5) === 'batch\n'
+  t('batchKey: one per Bot, never a tid (a cleaned tid has no line break)', R.batchKey('Bot') === 'batch\nBot' && R.batchKey('Bot') !== R.batchKey('別のBot') && R.batchKey(5) === 'batch\n'
     && !R.request({ tid: R.batchKey('Bot') }).tid.includes('\n'));
   const BB = ['kind', 'messageId', 'instruction', 'tasks', 'bot', 'source', 'createdAt', 'createdAtJst', 'mode'];
   let p = R.payload({ id, instruction: '  まとめて把握しました\n残りは別タスクで  ', now, mode: 'batch', tasks: [B, A] });

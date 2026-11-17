@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('mpb', {
   navigate: (id, url) => send('navigate', id, String(url)),
   back: id => send('back', id), forward: id => send('forward', id),
   copyPaneUrl: id => send('copy-pane-url', id), reload: id => send('reload', id), close: id => send('close', id),
-  add: () => send('add'), layout: l => send('layout', l),
+  add: () => send('add'), addMenu: () => send('add-menu'), layout: l => send('layout', l),
   focusPane: id => send('focus-pane', id), activatePane: id => send('activate-pane', id),
   setReload: (id, m) => send('set-reload', id, m),
   swap: (a, b) => send('swap', a, b), maximize: id => send('maximize', id), maximizeHalf: (id, side) => send('maximize-half', id, side),

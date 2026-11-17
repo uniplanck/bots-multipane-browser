@@ -56,7 +56,7 @@ const SAMPLE = {
   'sidebar:instruct': ['sidebar', [{ tid: 'T-1', task: '作業', bot: 'Bot', state: '待機', memo: 'メモ' }]],
 };
 for (const ch of ['back', 'forward', 'copy-pane-url', 'reload', 'close', 'focus-pane', 'activate-pane', 'maximize', 'sleep-toggle', 'wake-pane', 'sleep-now', 'load-cancel', 'pane-menu', 'chip-menu', 'rename-pane']) SAMPLE[ch] = ['chrome', [1]];
-for (const ch of ['add', 'reopen-closed', 'reload-all', 'open-grok-bot', 'ws-menu', 'approve-open', 'approve-keep-awake-toggle', 'palette', 'ready', 'save-retry', 'recovery-open', 'sync-reset', 'split-end', 'probe-resume', 'gbar-refresh', 'gbar-mode', 'sidebar-toggle', 'sidebar-settings', 'sidebar-resize-start', 'sidebar-resize-reset']) SAMPLE[ch] = ['chrome', []];
+for (const ch of ['add', 'add-menu', 'reopen-closed', 'reload-all', 'open-grok-bot', 'ws-menu', 'approve-open', 'approve-keep-awake-toggle', 'palette', 'ready', 'save-retry', 'recovery-open', 'sync-reset', 'split-end', 'probe-resume', 'gbar-refresh', 'gbar-mode', 'sidebar-toggle', 'sidebar-settings', 'sidebar-resize-start', 'sidebar-resize-reset']) SAMPLE[ch] = ['chrome', []];
 for (const ch of ['pane:pc-opened', 'pane:img-opened', 'pane:pc-closed', 'pane:msgmode-off', 'pane:mutation', 'pane:interact', 'pane:mouseup', 'pane:typing']) SAMPLE[ch] = ['pane', []];
 
 // ---- allowed ----
@@ -328,6 +328,7 @@ const CALLS = [
   ['chrome', 'usagePopLeave'], ['chrome', 'usagePopShow', { right: 812.5, bottom: 36, kind: 'grok', sel: '' }], ['chrome', 'usagePopShow', { right: 900, bottom: 36.25, kind: 'claude', sel: 'five_hour' }],
   ['chrome', 'usageWinMenu', 'codex', ''], ['chrome', 'usageWinMenu', 'claude', 'seven_day'], ['chrome', 'usageWinMenu', 'kimi', 'month-credit'],
   ['chrome', 'aiUsage', 'kimi', false], ['chrome', 'usagePopShow', { right: 700, bottom: 36, kind: 'antigravity', sel: '' }], ['chrome', 'usagePopShow', { right: 760, bottom: 36, kind: 'kimi', sel: '' }],
+  ['chrome', 'addMenu'],   // (2アカウント) ＋ right-clicked
   ['chrome', 'sidebarToggle'], ['chrome', 'sidebarSettings'], ['chrome', 'sidebarResizeStart'], ['chrome', 'sidebarResizeReset'],
   ['chrome', 'usageConnect', 'claude'], ['chrome', 'usageConnect', 'codex'], ['chrome', 'usageConnect', 'kimi'],
   ['overlay', 'usageOpen', 'claude'], ['overlay', 'usageOpen', 'codex'], ['overlay', 'usageOpen', 'kimi'], ['overlay', 'usageOpen', 'antigravity'],
@@ -342,8 +343,8 @@ t(`every call the UI makes today is allowed (${CALLS.length} calls)`, CALLS.ever
   t(`renderer.js: every mpb call it makes has an allowed sample (${r.length})`, r.length > 30 && r.every(k => CALLS.some(c => c[0] === 'chrome' && c[1] === k)));
   t(`overlay.js: every mpb call it makes has an allowed sample (${o.length})`, o.length >= 7 && o.every(k => CALLS.some(c => c[0] === 'overlay' && c[1] === k)));
   t('renderer.js / overlay.js: every action type they run has an allowed sample', typesIn('renderer.js').every(k => CALLS.some(c => c[0] === 'chrome' && c[1] === 'run' && c[2].type === k)) && typesIn('overlay.js').every(k => RUNS.some(a => a.type === k)));
-  t('only renderer / overlay use IPC in the UI pages (the other scripts are helpers)', /<script src="gbar-long-press\.js"><\/script><script src="cpu-meter\.js"><\/script><script src="local-icons\.js"><\/script><script src="gbar-presence\.js"><\/script><script src="gbar-mode\.js"><\/script><script src="gbar-pages\.js"><\/script><script src="renderer\.js"><\/script>/.test(read('index.html')) && /<script src="overlay\.js"><\/script>/.test(read('overlay.html'))
-    && !(fs.existsSync(path.join(SRC, 'local-icons.js')) && /mpb\./.test(read('local-icons.js'))) && ['gbar-presence.js', 'gbar-mode.js', 'gbar-pages.js', 'gbar-long-press.js', 'cpu-meter.js'].every(f => !/mpb\.|ipcRenderer|require\(/.test(read(f)))); }
+  t('only renderer / overlay use IPC in the UI pages (the other scripts are helpers)', /<script src="gbar-long-press\.js"><\/script><script src="cpu-meter\.js"><\/script><script src="local-icons\.js"><\/script><script src="gbar-presence\.js"><\/script><script src="gbar-mode\.js"><\/script><script src="gbar-rows\.js"><\/script><script src="gbar-pages\.js"><\/script><script src="renderer\.js"><\/script>/.test(read('index.html')) && /<script src="overlay\.js"><\/script>/.test(read('overlay.html'))
+    && !(fs.existsSync(path.join(SRC, 'local-icons.js')) && /mpb\./.test(read('local-icons.js'))) && ['gbar-presence.js', 'gbar-mode.js', 'gbar-rows.js', 'gbar-pages.js', 'gbar-long-press.js', 'cpu-meter.js'].every(f => !/mpb\.|ipcRenderer|require\(/.test(read(f)))); }
 
 // ---- pane preload (built) and the newtab page ----
 { const pp = read('pane-preload.js'), code = pp.replace(/\/\/.*$/gm, ''), sends = [...new Set([...pp.matchAll(/ipcRenderer\.send\('([^']+)'/g)].map(m => m[1]))];

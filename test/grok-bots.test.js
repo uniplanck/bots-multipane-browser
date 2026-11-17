@@ -222,19 +222,19 @@ t('parse: at most MAX_BOTS', GB.parse({ items: Array.from({ length: GB.MAX_BOTS 
 const g0 = GB.merge(GB.empty(), list, 1000).grok;
 t('merge into nothing: all added, the page order, time kept, a clean list', (m => m.added === 5 && m.removed === 0 && m.grok.at === 1000 && GB.valid(m.grok))(GB.merge(GB.empty(), list, 1000)) && J(g0.bots.map(b => b.order)) === '[0,1,2,3,4]');
 let g = GB.pin(GB.pin(g0, U(4), true), U(2), true);
-g = GB.rename(g, U(2), 'ティボ'); g = GB.rename(g, U(3), '  ');
+g = GB.rename(g, U(2), 'ヘルパー'); g = GB.rename(g, U(3), '  ');
 t('pin: listed Bots only, once each, in the order pinned; unpin', J(g.pins) === J([U(4), U(2)]) && GB.pin(g, 'nope', true) === g && GB.pin(g, U(4), true) === g && J(GB.pin(g, U(4), false).pins) === J([U(2)]));
-t('rename: a name of its own for this bar; empty / the page name = the page name again', g.aliases[U(2)] === 'ティボ' && !Object.hasOwn(g.aliases, U(3)) && !Object.hasOwn(GB.rename(g, U(2), '').aliases, U(2)) && !Object.hasOwn(GB.rename(g, U(2), 'Helper').aliases, U(2)) && GB.rename(g, 'nope', 'x') === g);
+t('rename: a name of its own for this bar; empty / the page name = the page name again', g.aliases[U(2)] === 'ヘルパー' && !Object.hasOwn(g.aliases, U(3)) && !Object.hasOwn(GB.rename(g, U(2), '').aliases, U(2)) && !Object.hasOwn(GB.rename(g, U(2), 'Helper').aliases, U(2)) && GB.rename(g, 'nope', 'x') === g);
 t('movePin: dropped onto another pin takes its place (as the favorites); not pinned / same: unchanged', J(GB.movePin(g, U(2), U(4)).pins) === J([U(2), U(4)]) && GB.movePin(g, U(2), U(2)) === g && GB.movePin(g, U(1), U(2)) === g);
 { const v = GB.view(g);
-  t('view: pins in their order with the shown name; sections in the page order; each item says pinned / group / original name', J(v.pins.map(b => b.name)) === J(['MyBot', 'ティボ']) && v.pins[1].orig === 'Helper'
+  t('view: pins in their order with the shown name; sections in the page order; each item says pinned / group / original name', J(v.pins.map(b => b.name)) === J(['MyBot', 'ヘルパー']) && v.pins[1].orig === 'Helper'
     && J(v.sections.map(s => [s.name, s.items.length])) === J([['ピン留め済み', 1], ['稼働', 2], ['Dev', 1], ['待機', 1]]) && v.sections[1].items[0].pinned === true && v.sections[0].items[0].group === true && v.count === 5); }
 { const next = [list[1], { ...list[0], name: 'Team Alpha 2', section: '稼働' }, { id: 'new-bot', url: 'https://grok.com/bot/new-bot', name: '新入り', isGroup: false, section: 'Dev', order: 9, icon: '' }];
   const m = GB.merge(g, next, 2000);
   t('merge: new ones added, gone ones removed (and unpinned), names / sections updated, order = the new page order', m.added === 1 && m.removed === 3 && m.changed === 1
     && J(m.grok.bots.map(b => [b.id, b.name, b.section, b.order])) === J([[U(2), 'Helper', '稼働', 0], [U(1), 'Team Alpha 2', '稼働', 1], ['new-bot', '新入り', 'Dev', 2]]) && J(m.grok.pins) === J([U(2)]));
-  t('merge: the user\'s names stay (also of a Bot gone for now: back with it)', m.grok.aliases[U(2)] === 'ティボ' && GB.valid(m.grok)); }
-{ const favs = [{ id: 1, url: 'https://example.com/', label: 'ex' }, { id: 2, url: `https://grok.com/bot/${U(6)}`, label: 'NaoOS' }, { id: 3, url: 'https://grok.com/bot/unknown-bot', label: 'u' }];
+  t('merge: the user\'s names stay (also of a Bot gone for now: back with it)', m.grok.aliases[U(2)] === 'ヘルパー' && GB.valid(m.grok)); }
+{ const favs = [{ id: 1, url: 'https://example.com/', label: 'ex' }, { id: 2, url: `https://grok.com/bot/${U(6)}`, label: 'TeamX' }, { id: 3, url: 'https://grok.com/bot/unknown-bot', label: 'u' }];
   const a = GB.absorbFavs(g0, favs);
   t('absorbFavs: a favorite that is a listed Bot becomes its pin; the others stay as they were (same objects)', a.moved === 1 && J(a.grok.pins) === J([U(6)]) && a.keep.length === 2 && a.keep[0] === favs[0] && a.keep[1] === favs[2]);
   t('addUrl (お気に入りに追加): a listed Bot -> pinned; another URL / an unknown Bot -> an ordinary favorite', (r => r.pinned && J(r.grok.pins) === J([U(3)]))(GB.addUrl(g0, `https://grok.com/bot/${U(3)}?x=1`))
@@ -496,7 +496,7 @@ const dialog = (media = true, hidden = false) => ({ querySelector: () => (media 
     && /paneOn\('pane:img-closed', \(p, viewer\) => \{ if \(p\.imgMax\) setImgMax\(p, false, viewer === true\); \}\);/.test(main) && !/mpb:pc/.test(fn('setImgMax')));
   t('main: Esc goes to the image viewer first (as the cloud PC); a new page drops the image state', /if \(pane\?\.imgMax\) return false;/.test(fn('handleKey')) && /if \(p\.imgMax\) setImgMax\(p, false\); \}\);/.test(main));
   t('main: 設定 has the image setting (checked unless turned off)', /checked: settings\.autoImg !== false, click: m => \{ settings\.autoImg = m\.checked; save\(\); \}/.test(fn('buildMenu')));
-  t('main: the list is saved in panes.json (grok) and read at startup; never read by itself (no timer / startup call)', /favorites: favorites\.map\(\(\{ url, label \}\) => \(\{ url, label \}\)\), grok, settings, workspaces \};/.test(fn('stateDoc')) && /grok = st\.grok \|\| GB\.empty\(\);/.test(fn('startup'))
+  t('main: the list is saved in panes.json (grok) and read at startup; never read by itself (no timer / startup call)', /favorites: favorites\.map\(\(\{ url, label, acct \}\) => \(\{ url, label, \.\.\.acctSave\(acct\) \}\)\), grok, settings, workspaces \};/.test(fn('stateDoc')) && /grok = st\.grok \|\| GB\.empty\(\);/.test(fn('startup'))
     && (main.replace('async function grokRefresh()', '').match(/grokRefresh\(\)/g) || []).length === 1 && /^on\('gbar-refresh', \(\) => grokRefresh\(\)\);/m.test(main));
   t('main: the old favorites move once, only from a ready panes.json, only after their backup is written (wx)', /if \(ld\.status === 'ready' && !settings\.favGrokV1\) gbMigrate\(\);/.test(fn('startup')) && /flag: 'wx'[\s\S]*return; \}[\s\S]*favorites = \[\]; settings\.favGrokV1 = true; save\(\);/.test(fn('gbMigrate')));
   t('main: one read at a time; the hidden window is muted, sandboxed, without preload, in the background-check role; clicks undone before it closes', /if \(gbRun\) \{ diag\.rec\('gbar', 'BUSY'\); return; \}/.test(fn('grokRefresh')) && /wc\.setAudioMuted\(true\)/.test(fn('grokRefresh')) && /show: false/.test(fn('grokRefresh'))
@@ -504,10 +504,10 @@ const dialog = (media = true, hidden = false) => ({ querySelector: () => (media 
   t('main: only the state script runs in the page\'s own world (React\'s props on the rows are seen from no other); every click, the undo and the icons in the read\'s own', GB.inPage(GB.STATE_JS)
     && [GB.CLICK_JS('trigger'), GB.CLICK_JS('more'), GB.RESTORE_JS({ orig: 'false', opened: true, more: 1 }), GB.ICONS_JS(['https://a.example/i.png']), '', GB.STATE_JS + ' ', undefined].every(c => !GB.inPage(c))
     && /GB\.inPage\(code\) \? wc\.executeJavaScript\(code\) : wc\.executeJavaScriptInIsolatedWorld\(GB\.WORLD, \[\{ code \}\]\)/.test(main) && (main.match(/GB\.inPage\(/g) || []).length === 1 && /const o = await gbJs\(wc, GB\.STATE_JS\);/.test(fn('grokRefresh')));
-  t('main: a failed read keeps the list (it changes only on OK)', /if \(code === 'OK'\) \{\s*m = GB\.merge\(grok, bots, Date\.now\(\)\);/.test(fn('grokRefresh')) && (fn('grokRefresh').match(/grok = /g) || []).length === 1);
-  t('main: お気に入りに追加 of a listed Bot pins it; the Bots open like favorites', /const r = GB\.addUrl\(grok, url\); if \(r\.pinned\)/.test(fn('addFavorite')) && /openFavorite\(null, where, \{ id: 'g:' \+ b\.id, url: b\.url, label: GB\.nameOf\(grok, b\) \}\)/.test(fn('openGrokBot')));
+  t('main: a failed read keeps the list (it changes only on OK)', /if \(code === 'OK'\) \{\s*m = GB\.merge\(grok, bots, Date\.now\(\), \{ acct, def: defAcct\(\) \}\);/.test(fn('grokRefresh')) && (fn('grokRefresh').match(/grok = /g) || []).length === 1);
+  t('main: お気に入りに追加 of a listed Bot pins it; the Bots open like favorites', /const r = GB\.addUrl\(grok, url\); if \(r\.pinned\)/.test(fn('addFavorite')) && /openFavorite\(null, where, \{ id: 'g:' \+ b\.id, url: b\.url, label: GB\.nameOf\(grok, b\), acct: b\.acct \}\)/.test(fn('openGrokBot')));
   const gbCode = ['grokRefresh', 'gbMigrate', 'gbotMenu', 'openGrokBot', 'setImgMax'].map(fn).join('\n');
-  t('main: the read restores the sidebar before the icons and before the window goes; the outcome goes to the bar', /back = await gbJs\(wc, GB\.RESTORE_JS\(rs\), 4000\)/.test(fn('grokRefresh')) && /gbSay\(GB\.note\(code, m\)/.test(fn('grokRefresh')));
+  t('main: the read restores the sidebar before the icons and before the window goes; the outcome goes to the bar', /back = await gbJs\(wc, GB\.RESTORE_JS\(rs\), 4000\)/.test(fn('grokRefresh')) && /note: GB\.note\(code, m /.test(fn('grokRefresh')) && /gbSay\(out\.map\(/.test(fn('grokRefresh')));
   t('main: nothing of the list is logged (counts / codes only)', gbCode.length > 2000 && (gbCode.match(/dlog\([^\n]*/g) || []).every(l => !/name|url|icon|label|bots\.map|grok\.bots|left|favorites/i.test(l.replace(/dlog\('grok bar', '[^']*'/, '').replace('e && e.name', '')))); }   // an error's type name only
 
 pageRuns().catch(e => { bad++; console.log('FAIL page runs threw:', e && e.message); })

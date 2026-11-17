@@ -68,9 +68,8 @@ t('width: the sum of the characters', GM.width('abc') === 3 && GM.width('あい�
   }
   t(`truncate: 3000 random names: the longest start of whole characters within the room (ends trimmed), never wider${fails.length ? ' — failed: ' + fails.slice(0, 3) : ''}`, !fails.length); }
 
-// ---- initial: the badge of an item without an icon ----
-t('initial: the first visible character, upper case when it stays one character; none: •', GM.initial('grok') === 'G' && GM.initial('  bots') === 'B' && GM.initial('ぐろっく') === 'ぐ' && GM.initial(MAN_PC + 'Dev') === MAN_PC
-  && GM.initial(FLAG_JP + 'News') === FLAG_JP && GM.initial(E_ACUTE + 'x') === 'E' + U(0x301) && GM.initial('ß') === 'ß' && GM.initial(U(0x200b) + 'x') === 'X' && GM.initial('') === '•' && GM.initial(null) === '•');
+// ---- no first-letter badge any more: an item of the bar is its name only ----
+t('initial: gone (the bar shows no icon / first-letter badge)', !('initial' in GM));
 
 // ---- the cycle ----
 t('modes: 通常 / セミコンパクト / コンパクト', J(GM.MODES) === J(['normal', 'semi', 'compact']) && J(GM.MODES.map(m => GM.LABEL[m])) === J(['通常', 'セミコンパクト', 'コンパクト']));
@@ -112,19 +111,19 @@ t('main.js: gbar-mode -> gbModeNext (a top-level function, the handler inside th
   t('main.js gbModeNext (run): normal -> semi -> compact -> normal -> semi, saved and pushed to every window each time', !!m && J(seq) === J(['semi', 'compact', 'normal', 'semi']) && box.saves === 4 && box.pushes === 4 && box.arg === undefined);
   ctx.settings.gbarMode = 'bogus'; vm.runInContext('gbModeNext()', ctx);
   t('main.js gbModeNext: from an unknown value (never written by main) the next is セミコンパクト', ctx.settings.gbarMode === 'semi'); }
-{ const m = main.match(/const gbView = \(\) => [^\n]*;/), ctx = vm.createContext({ GM, GS: require('../src/gbar-sections'), GB: { view: () => ({ pins: [], sections: [] }) }, grok: {}, settings: {}, gbRun: false, gbNote: '' });
+{ const m = main.match(/const gbView = \(\) => [^\n]*;/), ctx = vm.createContext({ AC: require('../src/accounts'), GM, GS: require('../src/gbar-sections'), GB: { view: () => ({ pins: [], sections: [] }) }, grok: {}, settings: {}, gbRun: false, gbNote: '' });
   vm.runInContext(m[0].replace('const gbView', 'var gbView'), ctx);
   const mode = v => { ctx.settings = v === undefined ? {} : { gbarMode: v }; return vm.runInContext('gbView().mode', ctx); };
   t('main.js gbView (run): none / unknown -> normal, each mode as set', mode(undefined) === 'normal' && mode('x') === 'normal' && GM.MODES.every(x => mode(x) === x)); }
 t('IPC: gbar-mode from the window\'s own page only (chrome), no payload used', J(P.CHANNELS['gbar-mode'].roles) === J(['chrome']) && !P.CHANNELS['gbar-mode'].shape && !P.CHANNELS['gbar-mode'].target);
 t('preload: mpb.gbarMode sends gbar-mode (nothing else)', /gbarMode: \(\) => send\('gbar-mode'\)/.test(read('preload.js')));
-t('index.html: gbar-mode.js before gbar-pages.js / renderer.js', /<script src="gbar-mode\.js"><\/script><script src="gbar-pages\.js"><\/script><script src="renderer\.js"><\/script>/.test(read('index.html')));
+t('index.html: gbar-mode.js before gbar-rows.js / gbar-pages.js / renderer.js', /<script src="gbar-mode\.js"><\/script><script src="gbar-rows\.js"><\/script><script src="gbar-pages\.js"><\/script><script src="renderer\.js"><\/script>/.test(read('index.html')));
 t('gbar-mode.js: plain script + CommonJS, no app API', /^const GbarMode = \(\(\) => \{/m.test(read('gbar-mode.js')) && !/mpb\.|ipcRenderer|require\(|document\.|window\./.test(read('gbar-mode.js')));
 { const css = read('style.css');
   t('style: rounded group frame is an inset shadow in every mode; no gmark style; bot borders invisible',
     /\.fav-btn\.gbot\.grp\{box-shadow:inset 0 0 0 1px [^}]+\}/.test(css) && !/\.gmark|\.fav-btn\.gpin\{border-color/.test(css)
     && /\.fav-btn\.gbot\{[^}]*border-color:transparent/.test(css) && /\.fav-btn\{[^}]*border-radius:6px/.test(css));
-  t('style: the modes on #favs (セミコンパクト: tighter buttons / smaller headings; コンパクト: no gap, tight padding; 次へ › unchanged)', /#favs\.gm-semi \.fav-btn:not\(#gbar-next\)\{padding:0 6px\}/.test(css) && /#favs\.gm-semi \.fav-btn\.gbot\{[^}]*gap:4px/.test(css)
+  t('style: the modes on #favs (セミコンパクト: tighter buttons / smaller headings; コンパクト: no gap, tight padding; 次へ › unchanged)', /#favs\.gm-semi \.fav-btn:not\(#gbar-next\)\{padding:0 6px\}/.test(css)
     && /#favs\.gm-compact \.fav-btn:not\(#gbar-next\)\{padding:0 3px;gap:0\}/.test(css) && /#favs\.gm-semi \.gsec,#favs\.gm-compact \.gsec\{font-size:9px;/.test(css) && !/gm-[a-z]+[^{}]*#gbar-next\{/.test(css)); }
 
 // ---- renderer.js: the Grok bar in a vm on a tiny fake DOM ----
@@ -164,27 +163,25 @@ t('renderer: the short-label helpers and the bar block are there', A0 > 0 && A1 
     if (has(e, 'gsep')) return 1;
     if (has(e, 'gsec')) return GM.width(e.textContent) * 5.5 + (m === 'normal' ? 8 : 5);
     if (has(e, 'flabel')) return GM.width(e.textContent) * 6;
-    if (has(e, 'gic')) return 16;
-    if (has(e, 'fic')) return e.parent && has(e.parent, 'gbot') ? 16 : 14;
     if (has(e, 'fav-btn')) {
-      const g = has(e, 'gbot'), kids = e.children.map(wOf), pad = m === 'compact' ? 6 : m === 'semi' ? (g ? 9 : 12) : (g ? 11 : 16), gap = m === 'compact' ? 0 : m === 'semi' && g ? 4 : 5;
+      const g = has(e, 'gbot'), kids = e.children.map(wOf), pad = m === 'compact' ? 6 : m === 'semi' ? 12 : (g ? 14 : 16), gap = m === 'compact' ? 0 : 5;
       return Math.min(2 + pad + kids.reduce((a, b) => a + b, 0) + gap * Math.max(0, kids.length - 1), g ? 136 : 96);
     }
     return 0;
   }
   favs = new El('div'); favs.id = 'favs'; favs.w = 1200; favs.shown = true;
-  const byId = { '#favs': favs, '#fav-star': new El('button'), '#gbar-note': new El('span'), '#fav-hint': new El('span') };
+  const byId = { '#favs': favs, '#favs-y': new El('div'), '#fav-star': new El('button'), '#gbar-note': new El('span'), '#fav-hint': new El('span') };
   const box = { gbar: null, ro: null, calls: [] };
   const modeCtx = vm.createContext({ GM, settings: {}, save() {}, gbPush() {} });
   vm.runInContext(main.match(/function gbModeNext\(\) \{[^\n]*?\}(?=\s)/)[0], modeCtx);
   const mpb = new Proxy({}, { get: (_, k) => (k === 'onGbar' ? cb => { box.gbar = cb; } : (...a) => { box.calls.push([k, ...a]); if (k === 'gbarMode') modeCtx.gbModeNext(); }) });
   const timers = new Map(); let timerId = 0;   // the hold timers: elapse() is HOLD_MS passing while the buttons are still down
   const elapse = () => { for (const [id, t] of [...timers]) { timers.delete(id); t.fn(); } };
-  const ctx = vm.createContext({ setTimeout: (fn, ms) => { timers.set(++timerId, { fn, ms }); return timerId; }, clearTimeout: id => { timers.delete(id); }, $: s => byId[s], mpb, S: null, MOD: '⌘', renderSummaryTips() {}, GbarPresence: require('../src/gbar-presence'), GbarMode: GM, GbarPages: require('../src/gbar-pages'), GbarLongPress: require('../src/gbar-long-press'), URL, document: { createElement: tag => new El(tag) },
+  const ctx = vm.createContext({ setTimeout: (fn, ms) => { timers.set(++timerId, { fn, ms }); return timerId; }, clearTimeout: id => { timers.delete(id); }, $: s => byId[s], mpb, S: null, MOD: '⌘', renderSummaryTips() {}, GbarPresence: require('../src/gbar-presence'), GbarMode: GM, GbarPages: require('../src/gbar-pages'), GbarRows: require('../src/gbar-rows'), GbarLongPress: require('../src/gbar-long-press'), URL, document: { createElement: tag => new El(tag) },
     getComputedStyle: e => (e === favs ? { columnGap: '4px' } : { marginLeft: has(e, 'gsep') ? '4px' : '0px', marginRight: has(e, 'gsep') ? '4px' : '0px' }),
-    ResizeObserver: class { constructor(cb) { box.ro = cb; } observe() {} } });
+    ResizeObserver: class { constructor(cb) { this.cb = cb; } observe(x) { if (x === favs) box.ro = this.cb; } } });   // the N row's (2段)
   vm.runInContext(ren.slice(ren.indexOf('function setTip('), ren.indexOf('function tipAttrs(')) + ren.slice(A0, A1) + ren.slice(B0, B1), ctx);
-  const run = s => vm.runInContext(s, ctx), gbtn = byId['#fav-star'], gNext = run('gNext'), shortLabel = run('shortLabel');
+  const run = s => vm.runInContext(s, ctx), gbtn = byId['#fav-star'], gNext = run('gLanes[0].next'), shortLabel = run('shortLabel');
   // the bar's list: 2 pins (one without an icon), 3 sections (the last one nameless), 2 favorites (one without a label)
   const bot = (id, name, o = {}) => ({ id, name, orig: name, url: 'https://grok.com/bot/' + id, group: !!o.group, icon: o.icon ? 'data:image/png;base64,AAAA' : '', pinned: !!o.pinned });
   const PINS = [bot('p1', '翻訳アシスタント', { icon: 1, pinned: 1 }), bot('p2', 'Research Helper', { pinned: 1, group: 1 })];
@@ -197,7 +194,7 @@ t('renderer: the short-label helpers and the bar block are there', A0 > 0 && A1 
   ctx.S = { favorites: [{ id: 1, url: 'https://example.com/', label: 'Example Site' }, { id: 2, url: 'https://news.example.org/a', label: '' }] };
   const FAVNAME = { f1: 'Example Site', f2: 'news.example.org' };
   const send = (m, o = {}) => box.gbar({ pins: PINS, sections: SECS, count: 27, at: 0, busy: false, note: '', mode: m, ...o });
-  const GP = () => run('GP'), pageN = () => GP().pages.length;
+  const GP = () => run('gLanes[0].GP'), pageN = () => GP().pages.length;
   const kids = () => favs.children;
   const used = () => kids().reduce((s, e, i) => { const cs = ctx.getComputedStyle(e); return s + wOf(e) + parseFloat(cs.marginLeft) + parseFloat(cs.marginRight) + (i ? 4 : 0); }, 0);
   const fits = () => used() <= favs.w + 1e-6;
@@ -217,7 +214,7 @@ t('renderer: the short-label helpers and the bar block are there', A0 > 0 && A1 
   t(`vm 通常: pins first (with names), the rest in pages that fit (${pages.normal} pages), 次へ at the end`, pinsShown().every((e, i) => has(e, 'gpin') && labelOf(e) === shortLabel(PINS[i].name, 10))
     && pages.normal >= 3 && kids().at(-1) === gNext && everyPage(fits).every(Boolean));
   gNext.onclick();                                           // to page 2: its first item is kept across a mode change (everyPage moves it: checked first)
-  const anchor = run('gAnchor'), anchorShown = () => GP().page === ctx.GbarPages.pageOf(GP().pages, GP().keys.indexOf(anchor)) && kids().includes(GP().els[GP().keys.indexOf(anchor)]);
+  const anchor = run('gLanes[0].anchor'), anchorShown = () => GP().page === ctx.GbarPages.pageOf(GP().pages, GP().keys.indexOf(anchor)) && kids().includes(GP().els[GP().keys.indexOf(anchor)]);
 
   // The frame has no layout dimensions. Check group / bot classes including pins in all three modes.
   const groupFrames = () => [...pinsShown().map((e, i) => ({ e, key: 'b' + PINS[i].id })), ...allItems().filter(x => x.key[0] === 'b')]
@@ -230,7 +227,7 @@ t('renderer: the short-label helpers and the bar block are there', A0 > 0 && A1 
     box.calls.length = 0; send('normal', { busy: true }); gbtn.oncontextmenu({ preventDefault: () => { pd++; } }); gbtn.onclick();
     t('vm: a right-click on the Grok button asks main for the next mode (no menu, no list read; also while a read runs)', pd === 2 && c1 === J([['gbarMode']]) && J(box.calls) === J([['gbarMode']]));
     send('normal'); box.calls.length = 0; gbtn.onclick();
-    t('vm: a left-click still reads the list (unchanged; nothing while a read runs); the list sent again keeps the page', J(box.calls) === J([['gbarRefresh']]) && run('gAnchor') === anchor && GP().page === 1 && anchorShown()); }
+    t('vm: a left-click still reads the list (unchanged; nothing while a read runs); the list sent again keeps the page', J(box.calls) === J([['gbarRefresh']]) && run('gLanes[0].anchor') === anchor && GP().page === 1 && anchorShown()); }
 
   // Native gesture sequences: contextmenu can be present or absent; a Ctrl-left click must never reload.
   { const ev = o => ({ button: 0, preventDefault() { this.prevented = true; }, ...o });
@@ -267,7 +264,7 @@ t('renderer: the short-label helpers and the bar block are there', A0 > 0 && A1 
   // セミコンパクト
   send('semi');
   pinW.semi = GP().pinW; pages.semi = pageN();
-  t('vm セミコンパクト: on the page holding the item 次へ went to (page 2 in 通常, page 1 now)', run('gAnchor') === anchor && anchorShown() && GP().page === 0);
+  t('vm セミコンパクト: on the page holding the item 次へ went to (page 2 in 通常, page 1 now)', run('gLanes[0].anchor') === anchor && anchorShown() && GP().page === 0);
   t('vm セミコンパクト: the mode class is on the bar before it is measured; every name cut to 4 units (Bots, pins, favorites), group frame kept',
     favs.className === 'gm-semi' && allItems().every(({ e, key }) => { const l = labelOf(e), n = key[0] === 'f' ? FAVNAME[key] : NAME[key]; return l === GM.truncate(n) && GM.width(l) <= 4; })
     && pinsShown().every((e, i) => labelOf(e) === GM.truncate(PINS[i].name)) && allItems().filter(x => x.key[0] === 'b').every(({ e, key }) => !e.children.some(c => has(c, 'gmark')) && has(e, 'grp') === GROUP.has(key)));
@@ -283,13 +280,13 @@ t('renderer: the short-label helpers and the bar block are there', A0 > 0 && A1 
   // コンパクト
   send('compact');
   pinW.compact = GP().pinW; pages.compact = pageN();
-  const iconOnly = (e, b) => e.children.length === 1 && (b.icon ? e.children[0].tagName === 'IMG' && has(e.children[0], 'gic') : has(e.children[0], 'fic') && e.children[0].textContent === GM.initial(b.name));
+  const nameOnly = (e, name) => e.children.length === 1 && has(e.children[0], 'flabel') && e.children[0].textContent === GM.truncate(name, 2);
   const BOT = Object.fromEntries([...PINS, ...SECS.flatMap(s => s.items)].map(b => ['b' + b.id, b]));
-  t('vm コンパクト: Bots and pins show the icon only (none: the first letter), no name, no group mark; the tooltip keeps the full name',
-    favs.className === 'gm-compact' && allItems().filter(x => x.key[0] === 'b').every(({ e, key }) => iconOnly(e, BOT[key]) && e.dataset.tip === BOT[key].name)
-    && pinsShown().every((e, i) => iconOnly(e, PINS[i]) && has(e, 'gpin')));
-  t('vm コンパクト: favorites (no icon of their own) show a first-letter badge; headings cut to 2 units',
-    J(allItems().filter(x => x.key[0] === 'f').map(({ e }) => e.children.map(c => [c.className, c.textContent]))) === J([[['fic', 'E']], [['fic', 'N']]])
+  t('vm コンパクト: Bots and pins show their name cut to 2 units only (no icon, no first-letter badge), no group mark; the tooltip keeps the full name',
+    favs.className === 'gm-compact' && allItems().filter(x => x.key[0] === 'b').every(({ e, key }) => nameOnly(e, BOT[key].name) && e.dataset.tip === BOT[key].name)
+    && pinsShown().every((e, i) => nameOnly(e, PINS[i].name) && has(e, 'gpin')) && labelOf(GP().els[GP().keys.indexOf('bw0')]) === '議' && labelOf(GP().els[GP().keys.indexOf('bd0')]) === 'Co');
+  t('vm コンパクト: favorites show their name cut to 2 units too; headings cut to 2 units',
+    J(allItems().filter(x => x.key[0] === 'f').map(({ e }) => e.children.map(c => [c.className, c.textContent]))) === J([[['flabel', 'Ex']], [['flabel', 'ne']]])
     && J(GP().heads.map(h => h && [h.textContent, h.dataset.tip])) === J([['仕▾', '仕事の依頼'], ['De▾', 'Dev tools'], null]));
   t(`vm コンパクト: all fits in one page now (no 次へ), the pins narrower again (${pinW.compact} px)`, pages.compact === 1 && !kids().includes(gNext) && pinW.compact < pinW.semi && fits()
     && kids().length === GP().pinN + 27 + 1 + 2);           // pins + 2 favorites + 25 Bots, the separator, the 2 named headings
@@ -360,8 +357,9 @@ t('renderer: the short-label helpers and the bar block are there', A0 > 0 && A1 
   }
   favs.w = 520; box.ro();
   t(`vm コンパクト + a narrower window: pages again (${pageN()}), each fits, 次へ back`, pageN() >= 2 && kids().at(-1) === gNext && everyPage(fits).every(Boolean));
-  { const img = GP().els[GP().keys.indexOf('bd1')].children[0]; img.on.error[0]();
-    t('vm コンパクト: an icon that does not load becomes its first letter', (e => e.children.length === 1 && has(e.children[0], 'fic') && e.children[0].textContent === 'T')(GP().els[GP().keys.indexOf('bd1')])); }
+  t('vm: no item of the bar has an icon (IMG) or a first-letter badge in any mode', GM.MODES.every(m => { send(m); return [...pinsShown(), ...allItems().map(x => x.e)]
+    .every(e => e.children.every(c => c.tagName !== 'IMG' && !has(c, 'fic') && !has(c, 'gic'))); }));
+  send('compact');
 
   // Presence updates existing elements, including pins duplicated in sections and pages currently detached.
   for (const m of GM.MODES) {

@@ -28,7 +28,7 @@ for (const [name, pattern] of Object.entries({
   sleepChip: /class="zz" \$\{tipAttrs/, statusChip: /class="wdot[^\n]*tipAttrs/, splitter: /setTip\(e, 'ペインの幅を調整'/,
   paneAddress: /setTip\(d\.querySelector\('\.title'\)/, paneMeta: /class="rfail" \$\{tipAttrs/,
   bot: /setTip\(el, b\.name/, favorite: /setTip\(b, name \|\| 'お気に入り'/,
-  group: /setTip\(h, s\.name/, nextPage: /setTip\(gNext, '次のページ'/,
+  group: /setTip\(h, s\.name/, nextPage: /setTip\(next, '次のページ'/,
   compact: /setTip\(b,'コンパクト表示'/, usage: /setTip\(btn, NAME\[kind\]/,
 })) assert(pattern.test(renderer), `missing tooltip target: ${name}`);
 assert(/pointer-events\s*:\s*none/.test(css));

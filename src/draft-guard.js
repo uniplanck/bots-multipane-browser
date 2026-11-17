@@ -116,6 +116,7 @@ const OPS = {
   LINK: { when: 'リンクをこのペインで開くと', go: '開く' },
   LAYOUT: { when: 'レイアウトを変えてペインを閉じると', go: '変更する' },
   WORKSPACE: { when: 'ワークスペースを切り替えると', go: '切り替える' },
+  ACCT: { when: 'このペインのアカウントを切り替えると', go: '切り替える' },   // (2アカウント) the pane is made again in the other login
 };
 const WHY = { PRESENT: '入力欄に下書きがあります', ATTACH: '添付ファイルがあります', UPLOAD: '添付をアップロード中です', IME: '変換中の文字があります',
   UNKNOWN: '入力欄の状態を確認できませんでした', BUSY: '一斉送信の処理中です' };

@@ -128,7 +128,8 @@ t('main.js: a refusal records a fixed code only (no origin / URL)', /diag\.rec\(
 { const U = require('../src/usage-web');
   const parts = [...main.matchAll(/partition:\s*([^,}]+)/g)].map(m => m[1].trim());
   t('main.js: the session is the shared default session except the usage login partitions, the 進捗サイドバー\'s and Botへの指示\'s POST (no page)', parts.length === 2 && parts.every(p => p === 'P.partition')
-    && (main.match(/session\.fromPartition\(/g) || []).length === 3 && /session\.fromPartition\(UW\.PROV\[k\]\.partition\)/.test(uses) && /session\.fromPartition\(SR\.PARTITION\)/.test(fnOf('sideSes')) && !/fromPath\(/.test(main)
+    && (main.match(/session\.fromPartition\(/g) || []).length === 4 && /session\.fromPartition\(part\)/.test(fnOf('acctSes')) &&   // (2アカウント) + the other account's own partition (accounts.js)
+    /session\.fromPartition\(UW\.PROV\[k\]\.partition\)/.test(uses) && /session\.fromPartition\(SR\.PARTITION\)/.test(fnOf('sideSes')) && !/fromPath\(/.test(main)
     && /session\.fromPartition\(SI\.PARTITION, \{ cache: false \}\)/.test(fnOf('instructSession')) && require('../src/instruct-rules').PARTITION === 'xg-instruct'   // in memory only, used for its fetch only
     && /const insFetch = \(url, opts\) => instructSession\(\)\.fetch\(url, opts\);/.test(main) && (main.match(/instructSession\(\)/g) || []).length === 2   // its definition + the fetch
     && /session: sideSes\(\)/.test(fnOf('ensureSide')) && require('../src/sidebar-rules').PARTITION === 'persist:xg-sidebar'

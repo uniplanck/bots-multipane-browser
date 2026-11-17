@@ -49,6 +49,7 @@ PK.forEach((k, i) => {
   b.onclick = () => mpb.layout(k); $('#presets').appendChild(b);
 });
 $('#add').onclick = () => mpb.add();
+$('#add').oncontextmenu = e => { e.preventDefault(); mpb.addMenu(); };   // (2アカウント) which account the new pane opens in
 $('#reopen').onclick = () => { if (S && S.canReopen) mpb.reopenClosed(); };
 $('#reload-all').onclick = () => mpb.reloadAll();
 $('#open-grok-bot').onclick = () => mpb.openGrokBot();
@@ -125,6 +126,7 @@ function mk(id) {
   const d = document.createElement('div'); d.className = 'pane entering';
   d.innerHTML = `
   <div class="head" draggable="true">
+    <span class="acct"></span>
     <span class="fav"></span>
     <div class="titlebox"><span class="title"></span><input class="url" spellcheck="false" autocomplete="off"></div>
     <span class="meta"></span>
@@ -355,6 +357,8 @@ const onS = s => {
     const color = s.colors[p.color];
     d.style.setProperty('--pc', color || 'transparent');
     d.classList.toggle('colored', !!color);
+    { const a = d.querySelector('.acct'); a.textContent = acctLetter(p.acct); a.className = 'acct acct-' + acctLetter(p.acct);   // (2アカウント) which login this pane is in
+      setTip(a, 'アカウント', `${p.acctName || ''} のログインで開いています。`, '', 'ペインの設定（⋯）で切り替えます。'); }
     d.querySelector('.fav').innerHTML = favHtml(p);
     d.querySelector('.title').innerHTML = p.name ? `<b>${esc(p.name)}</b><span class="sub">${esc(p.title)}</span>` : esc(p.title);
     setTip(d.querySelector('.title'), 'URLを編集', 'クリックしてURLや検索語を入力します。', `${MOD}L`, p.url || '新しいペイン');
@@ -391,6 +395,7 @@ const onS = s => {
 mpb.onState(onS);
 // ---- お気に入りバー: [Grok button][pins][favorites = other URLs][the Bot list in grok.com's sections]. main reads the list (Grok button only) and
 // sends it on 'gbar' (G: pins / sections / busy / note / mode); the bar is rebuilt only when that or the favorites change.
+// (2段, gbar-rows.js) two rows after the Grok button: A's items above (#favs), B's below (#favs-y), each paged on its own; an item is its name only
 // 表示モード (gbar-mode.js; main keeps it): a right-click on the Grok button takes the next one, 通常 → セミコンパクト → コンパクト → 通常
 const favs = $('#favs'), gbtn = $('#fav-star'), gnote = $('#gbar-note');
 let G = null, gRev = 0, favKey = '', gMode = 'normal';
@@ -415,8 +420,8 @@ function gPresence() {
   });
 }
 const openWhere = e => e.shiftKey ? 'window' : (e.metaKey || e.altKey) ? 'here' : 'new';
-// a name as the mode shows it: 通常 = as before (up to max columns), セミコンパクト = 4 units (コンパクト: no name, see gbotBtn / renderFavs)
-const gLabel = (s, max) => (gMode === 'semi' ? GbarMode.truncate(s) : shortLabel(s, max));
+// a name as the mode shows it: 通常 = as before (up to max columns), セミコンパクト = 4 units, コンパクト = 2 units
+const gLabel = (s, max) => (gMode === 'compact' ? GbarMode.truncate(s, 2) : gMode === 'semi' ? GbarMode.truncate(s) : shortLabel(s, max));
 // Handle secondary mousedown too in case native contextmenu is missed; consume its contextmenu / click once.
 // A new press (or keyboard interaction) resets the gesture: rapid distinct right-clicks still each advance the mode.
 let gModePress = false, gModeClick = false;
@@ -439,20 +444,15 @@ mpb.onGbar(v => {
   renderFavs(S ? S.favorites || [] : []);
   if (S) renderSummaryTips(S);
 });
-function gIcon(b) {                                          // its icon (16 px round), or the first letter when there is none / it does not load
-  const l = document.createElement('span'); l.className = 'fic'; l.textContent = GbarMode.initial(b.name);   // a whole character (emoji, marks)
-  if (!b.icon) return l;
-  const im = document.createElement('img'); im.className = 'gic'; im.alt = ''; im.draggable = false; im.referrerPolicy = 'no-referrer';
-  im.addEventListener('error', () => im.replaceWith(l), { once: true }); im.src = b.icon;
-  return im;
-}
+// (2アカウント) the account letter (A = account1 / B = アカウント2; main sends it): the round badge first in a pane's header (.acct), away from
+// the count badge / ✕ at its right end. The bar shows none (its row says which account); the item's tooltip still names it
+const acctLetter = v => (v === 'B' ? 'B' : 'A');
 function gbotBtn(b, pin) {
   const el = document.createElement('button');
   el.className = 'fav-btn gbot' + (pin ? ' gpin' : '') + (b.group ? ' grp' : '');
-  el.appendChild(gIcon(b));
-  if (gMode !== 'compact') el.insertAdjacentHTML('beforeend', `<span class="flabel">${esc(gLabel(b.name, 10))}</span>`);   // コンパクト: the icon only
+  el.insertAdjacentHTML('beforeend', `<span class="flabel">${esc(gLabel(b.name, 10))}</span>`);   // the name only (no icon)
   setTip(el, b.name, 'クリックで開き、長押しで今のペインに開きます。', '',
-    `${b.name !== b.orig ? `元の名前: ${b.orig}・` : ''}${b.group ? 'グループ・' : ''}${b.pinned ? 'お気に入り・' : ''}${b.url}・右クリックでメニュー`);
+    `${acctLetter(b.acct)}・${b.name !== b.orig ? `元の名前: ${b.orig}・` : ''}${b.group ? 'グループ・' : ''}${b.pinned ? 'お気に入り・' : ''}${b.url}・右クリックでメニュー`);
   gTrack(el, b);
   const hold = holdPress(el, () => mpb.gbotOpen(b.id, 'here'));
   // Do not capture the pointer or prevent pointerdown/dragstart: pinned items
@@ -479,33 +479,42 @@ const mkEl = (cls, text) => { const e = document.createElement('span'); e.classN
 // ページ送り (gbar-pages.js): the pins always stay; the rest (favorites, then the sections' Bots) is cut into pages that fit the bar, each page
 // starting with its section's heading. 次へ › at the right end goes to the next page (after the last: the first); no button when all fits. Redone
 // when the bar's width or the list changes: it stays on the page that holds the item 次へ last went to (gone: the first page). No sideways scroll
-let GP = null, gAnchor = null;                               // GP: the paged part (elements, widths, pages, page); gAnchor: that item's key
-const gNext = document.createElement('button');
-gNext.id = 'gbar-next'; gNext.className = 'fav-btn'; gNext.textContent = '次へ ›';
-gNext.onclick = () => { if (!GP || GP.pages.length < 2) return; GP.page = (GP.page + 1) % GP.pages.length; gAnchor = GP.keys[GP.pages[GP.page][0]]; gShow(); };
-function gMeasure() {                                        // every element once in the bar (none shrinks): its width with its margins
+// (2段, gbar-rows.js) each row of the bar (one per account) pages on its own: L = { acct, favs: the row's element, GP: the paged part (elements,
+// widths, pages, page), anchor: the key of the item its 次へ last went to, next: its 次へ button }
+function gLane(acct, el, id) {
+  const next = document.createElement('button');
+  next.id = id; next.className = 'fav-btn'; next.textContent = '次へ ›';
+  const L = { acct, favs: el, GP: null, anchor: null, next };
+  next.onclick = () => { const GP = L.GP; if (!GP || GP.pages.length < 2) return; GP.page = (GP.page + 1) % GP.pages.length; L.anchor = GP.keys[GP.pages[GP.page][0]]; gShow(L); };
+  new ResizeObserver(() => gLayout(L)).observe(el);
+  return L;
+}
+function gMeasure(L) {                                       // every element once in the row (none shrinks): its width with its margins
+  const { favs, GP, next } = L;
   const gap = parseFloat(getComputedStyle(favs).columnGap) || 0;
   const ow = e => { const cs = getComputedStyle(e); return e.getBoundingClientRect().width + (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0); };
-  favs.append(...GP.els, ...GP.heads.filter(Boolean), GP.sep, gNext);
+  favs.append(...GP.els, ...GP.heads.filter(Boolean), GP.sep, next);
   GP.pinW = [...favs.children].slice(0, GP.pinN).reduce((a, e) => a + ow(e) + gap, 0);
   GP.ws = GP.els.map(ow);
   GP.o = { gap, sec: GP.sec, head: GP.heads.map(h => (h ? ow(h) : 0)), sep: ow(GP.sep), lead: GP.pinN > 0 };
-  GP.btnW = gNext.getBoundingClientRect().width;             // not its margin (auto: it stands at the right end)
-  GP.ok = GP.btnW > 0;                                       // read while the bar had no size: again once it has one
+  GP.btnW = next.getBoundingClientRect().width;              // not its margin (auto: it stands at the right end)
+  GP.ok = GP.btnW > 0;                                       // read while the row had no size: again once it has one
 }
-function gLayout() {
+function gLayout(L) {
+  const GP = L.GP;
   if (!GP) return;
-  const w = favs.getBoundingClientRect().width;
+  const w = L.favs.getBoundingClientRect().width;
   if (!w || (w === GP.w && GP.ok)) return;
-  if (!GP.ok) gMeasure();
+  if (!GP.ok) gMeasure(L);
   GP.w = w;
   GP.pages = GbarPages.pages(GP.ws, w - GP.pinW, GP.btnW, GP.o);
-  const at = GbarPages.pageOf(GP.pages, GP.keys.indexOf(gAnchor));
+  const at = GbarPages.pageOf(GP.pages, GP.keys.indexOf(L.anchor));
   GP.page = at < 0 ? 0 : at;
-  if (at < 0) gAnchor = null;
-  gShow();
+  if (at < 0) L.anchor = null;
+  gShow(L);
 }
-function gShow() {                                           // the page after the pins (the same elements: their handlers stay)
+function gShow(L) {                                          // the page after the pins (the same elements: their handlers stay)
+  const { favs, GP, next } = L;
   const [from, to] = GP.pages[GP.page] || [0, 0], n = GP.pages.length, out = [];
   for (let j = from; j < to; j++) {
     const b = GbarPages.before(j, from, GP.o);
@@ -513,24 +522,32 @@ function gShow() {                                           // the page after t
     if (b.head >= 0 && GP.heads[b.head]) out.push(GP.heads[b.head]);
     out.push(GP.els[j]);
   }
-  if (n > 1) { out.push(gNext); setTip(gNext, '次のページ', GP.page + 1 < n ? '次のBot一覧を表示します。' : 'Bot一覧の先頭に戻ります。', '', `ページ ${GP.page + 1}/${n}`); }
+  if (n > 1) { out.push(next); setTip(next, '次のページ', GP.page + 1 < n ? '次のBot一覧を表示します。' : 'Bot一覧の先頭に戻ります。', '', `ページ ${GP.page + 1}/${n}`); }
   const now = [...favs.children].slice(GP.pinN);
   if (now.length === out.length && now.every((e, i) => e === out[i])) return;
   while (favs.children.length > GP.pinN) favs.lastElementChild.remove();
   favs.append(...out);
 }
-new ResizeObserver(() => gLayout()).observe(favs);
+// (2段) the rows: A above (#favs), B below (#favs-y), each with its own 次へ
+const gLanes = [gLane('A', favs, 'gbar-next'), gLane('B', $('#favs-y'), 'gbar-next-y')];
 function renderFavs(list) {
   const key = JSON.stringify(list) + '|' + gRev;
   if (key === favKey) { gPresence(); return; }                // onState: navigation / open / close / focus, without remeasuring or changing page
   const focusHead = gFocusHead && document.activeElement === gFocusHead.el ? gFocusHead : null;
   gFocusHead = null;
   favKey = key;
-  const pins = G ? G.pins : [], secs = G ? G.sections : [];
-  $('#fav-hint').style.display = list.length || pins.length || secs.length ? 'none' : '';
+  const rows = GbarRows.split(G ? G.pins : [], list, G ? G.sections : []), any = GbarRows.ROWS.some(r => GbarRows.count(rows[r]));
+  $('#fav-hint').style.display = any ? 'none' : '';
+  gItems = []; gSections = [];
+  gLanes.forEach(L => gFill(L, rows[L.acct], any, focusHead && focusHead.acct === L.acct ? focusHead : null));
+  gPresence();
+}
+// one row: [its pins][its favorites][its Bots in grok.com's sections], paged. No item while the other row has some: 未ログイン (style.css, .gnone)
+function gFill(L, row, any, focusHead) {
+  const favs = L.favs, { pins, favs: list, sections: secs } = row;
+  favs.classList.toggle('gnone', any && !GbarRows.count(row));
   favs.classList.toggle('gm-semi', gMode === 'semi'); favs.classList.toggle('gm-compact', gMode === 'compact');   // (表示モード) before anything is measured
   favs.innerHTML = '';
-  gItems = []; gSections = [];
   pins.forEach(b => favs.appendChild(gbotBtn(b, true)));
   const els = [], keys = [], sec = [];                       // the paged items: favorites (no section), then each section's Bots
   list.forEach(f => {
@@ -538,8 +555,8 @@ function renderFavs(list) {
     b.className = 'fav-btn'; b.draggable = true;
     let host = ''; try { host = new URL(f.url).hostname; } catch {}
     const isBot = /grok\.com$/.test(host) && /\/bot\//.test(f.url), name = f.label || host;
-    b.innerHTML = gMode === 'compact' ? `<span class="fic">${esc(GbarMode.initial(name))}</span>` : `<span class="flabel">${esc(gLabel(name))}</span>`;   // no icon of its own: コンパクト shows its first letter
-    setTip(b, name || 'お気に入り', '今のペインでお気に入りを開きます。', '', `${f.url}・右クリックでメニュー`);
+    b.innerHTML = `<span class="flabel">${esc(gLabel(name))}</span>`;
+    setTip(b, name || 'お気に入り', '今のペインでお気に入りを開きます。', '', `${acctLetter(f.acct)}・${f.url}・右クリックでメニュー`);
     gTrack(b, f);
     b.onclick = e => mpb.favOpen(f.id, e.shiftKey ? 'window' : (e.metaKey || e.ctrlKey) ? 'new' : 'here');
     b.onauxclick = e => { if (e.button === 1) mpb.favOpen(f.id, 'new'); };
@@ -555,14 +572,14 @@ function renderFavs(list) {
     if (!s.name || !s.collapsed) s.items.forEach(b => { els.push(gbotBtn(b, false)); keys.push('b' + b.id); sec.push(k); });
     if (!s.name) return null;
     const h = document.createElement('button'); h.type = 'button'; h.className = 'gsec' + (s.collapsed ? ' gcollapsed' : '');
-    h.textContent = (gMode === 'compact' ? GbarMode.truncate(s.name, 2) : gLabel(s.name, 12)) + (s.collapsed ? ` ${s.items.length}` : '');
+    h.textContent = gLabel(s.name, 12) + (s.collapsed ? ` ${s.items.length}` : '');
     h.appendChild(mkEl('gsec-chevron', s.collapsed ? '▸' : '▾'));
     h.setAttribute('aria-expanded', s.collapsed ? 'false' : 'true');
     setTip(h, s.name, s.collapsed ? 'クリックでこのグループのBotを表示します。' : 'クリックでこのグループのBotを折りたたみます。', '', `${s.items.length}件のBot`);
     h.onclick = e => {
       e.stopPropagation(); if (e.button === 2 || e.ctrlKey) return;
-      gAnchor = s.collapsed && s.items.length ? 'b' + s.items[0].id : 's' + k + ':' + s.name;
-      gFocusHead = { el: h, k, name: s.name }; mpb.gbarSecToggle(s.name);
+      L.anchor = s.collapsed && s.items.length ? 'b' + s.items[0].id : 's' + k + ':' + s.name;
+      gFocusHead = { el: h, acct: L.acct, k, name: s.name }; mpb.gbarSecToggle(s.name);
     };
     h.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); };
     h.draggable = false; h.ondragstart = e => { e.preventDefault(); e.stopPropagation(); };
@@ -572,13 +589,12 @@ function renderFavs(list) {
     }
     return h;
   });
-  GP = { pinN: pins.length, els, keys, sec, heads, sep: mkEl('gsep'), w: -1, ok: false, pages: [], page: 0 };
-  gLayout();
+  L.GP = { pinN: pins.length, els, keys, sec, heads, sep: mkEl('gsep'), w: -1, ok: false, pages: [], page: 0 };
+  gLayout(L);
   if (focusHead && secs[focusHead.k]?.name === focusHead.name) {
     const h = heads[focusHead.k] || els[sec.indexOf(focusHead.k)];
     if (h && favs.contains(h)) h.focus({ preventScroll: true });
   }
-  gPresence();
 }
 // drop a link / URL text onto the favorites bar to add it
 const fb = $('#favbar');

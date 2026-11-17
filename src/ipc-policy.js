@@ -154,7 +154,7 @@ const CHANNELS = {
   'dock-hover': { roles: CHROME, shape: a => num(a[0], -1e5, 1e5) && num(a[1], -1e5, 1e5) },
   'dock-drop': { roles: CHROME, shape: a => num(a[0], -1e5, 1e5) && num(a[1], -1e5, 1e5) },
   'dock-end': { roles: CHROME },
-  add: { roles: CHROME }, 'reopen-closed': { roles: CHROME }, 'reload-all': { roles: CHROME }, 'open-grok-bot': { roles: CHROME }, 'ws-menu': { roles: CHROME },
+  add: { roles: CHROME }, 'add-menu': { roles: CHROME }, 'reopen-closed': { roles: CHROME }, 'reload-all': { roles: CHROME }, 'open-grok-bot': { roles: CHROME }, 'ws-menu': { roles: CHROME },
   'approve-open': { roles: CHROME, shape: a => a.length <= 1 && opt(a[0], approveRect) },
   'approve-keep-awake-toggle': { roles: CHROME, shape: a => a.length === 0 },
   'approve-inline-open': { roles: CHROME, shape: a => a.length === 1 && approveRect(a[0]) },

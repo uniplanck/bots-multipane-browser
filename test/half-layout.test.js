@@ -88,7 +88,7 @@ const pane = id => ({ id, sleeping: false, view: { webContents: { isDestroyed: (
 const panes = [pane(1), pane(2), pane(3)];
 const context = vm.createContext({ panes, focused: 0, maximizedId: null, maxMode: null, keyboardFocus: null,
   byId: id => panes.find(p => p.id === id), setFocused: i => { context.focused = i; }, relayout() {}, clearUnread() {}, dlog() {},
-  windowActive: () => true, PN: { match: () => ({}) }, dismissTip() {}, dock: null, overlayOpen: false, isMac: true });
+  windowActive: () => true, PN: { match: () => ({}) }, dismissTip() {}, dock: null, overlayOpen: false, isMac: true, win: { isDestroyed: () => false } });   // handleKey: the window open
 vm.runInContext([source('toggleMaximize'), source('focusPane'), source('setPcMax'), source('setImgMax'), source('handleKey'),
   main.match(/^const inView = .*$/m)[0]].join('\n') + '\nglobalThis.testInView = inView;', context);
 const state = (id, mode) => { assert.strictEqual(context.maximizedId, id); assert.strictEqual(context.maxMode, mode); };

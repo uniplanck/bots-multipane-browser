@@ -21,7 +21,9 @@ t('where: past the end stays in the last row; no rows is safe', CP.where([2, 2],
 { const e = CP.entry({ ...spec('https://grok.com/bot/a', { name: 'A', color: 'blue', zoom: 1.25, zoomIndiv: true, reloadMinutes: 5, muted: true, sleep: false }),
     draft: '下書き', text: '本文', attachments: ['a.png'], snap: { q: 'x' }, grokToken: 't', id: 7, view: {} }, CP.where([2, 2], 3), NEWTAB);
   t('entry: only url / name / color / muted / zoom / zoomIndiv / reloadMinutes / sleep and row / col / rowGone / cols',
-    J(Object.keys(e).sort()) === J(['col', 'cols', 'row', 'rowGone', 'spec']) && J(Object.keys(e.spec).sort()) === J([...CP.SPEC_KEYS].sort()));
+    J(Object.keys(e).sort()) === J(['col', 'cols', 'row', 'rowGone', 'spec']) && J(Object.keys(e.spec).sort()) === J(CP.SPEC_KEYS.filter(k => k !== 'acct').sort()));
+  t('entry: (2アカウント) the account of a pane that was not on the default login is kept, so ⌘⇧T opens it in that login again',
+    CP.entry({ ...spec('https://grok.com/bot/a'), acct: 'account2' }, CP.where([1], 0), NEWTAB).spec.acct === 'account2' && !('acct' in e.spec));
   t('entry: no draft / text / attachment / snapshot / token / pane id / view', !/下書き|本文|a\.png|grokToken|"id"|view/.test(J(e)) && e.spec.zoom === 1.25 && e.spec.zoomIndiv === true && e.spec.name === 'A');
   t('entry: a copy (changing the pane later does not change it)', (() => { const s = spec('https://x.test/'), k = CP.entry(s, CP.where([1], 0), NEWTAB); s.name = 'later'; return k.spec.name === ''; })());
   t('entry: a blank pane / the new-tab page / no spec -> nothing to reopen', [spec(''), spec(NEWTAB), null, { url: 5 }].every(s => CP.entry(s, CP.where([1], 0), NEWTAB) === null) && CP.entry(spec('https://x.test/'), null, NEWTAB) === null); }
